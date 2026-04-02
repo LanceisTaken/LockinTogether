@@ -1,17 +1,21 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --border: #334155;
+  --input: #cbd5e1;
+  --ring: #64748b;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -37,17 +41,28 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --task-blue: #cffafe;
+  --task-blue-border: #0ea5e9;
+  --task-yellow: #fef9c3;
+  --task-yellow-border: #f59e0b;
+  --task-green: #d9f99d;
+  --task-green-border: #16a34a;
+  --task-pink: #fce7f3;
+  --task-pink-border: #db2777;
+  --kanban-bg: #ecfeff;
+  --kanban-border: #0ea5e9;
+  --kanban-header: #0f172a;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --background: #0f172a;
+  --foreground: #f8fafc;
+  --card: #111827;
+  --card-foreground: #f8fafc;
+  --popover: #111827;
+  --popover-foreground: #f8fafc;
+  --primary: #60a5fa;
+  --primary-foreground: #0f172a;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -72,6 +87,17 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+  --task-blue: #0ea5e9;
+  --task-blue-border: #0369a1;
+  --task-yellow: #fcd34d;
+  --task-yellow-border: #b45309;
+  --task-green: #22c55e;
+  --task-green-border: #064e3b;
+  --task-pink: #fda4af;
+  --task-pink-border: #be123c;
+  --kanban-bg: #0f172a;
+  --kanban-border: #38bdf8;
+  --kanban-header: #f8fafc;
 }
 
 @theme inline {
@@ -117,9 +143,74 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring/50 transition-colors duration-200 ease-in-out font-sans;
   }
-  body {
-    @apply bg-background text-foreground;
+  html, body {
+    font-family: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    font-weight: 400;
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans";
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+  p, span, label, button, input {
+    font-family: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans";
+    font-weight: 500;
+  }
+  input, button, select, textarea {
+    @apply outline-none focus-visible:ring-ring/40 focus-visible:ring-2;
+  }
+  .kanban-column-header,
+  .kanban-column-header button {
+    @apply outline-none focus-visible:ring-0;
+  }
+  .kanban-column {
+    @apply border border-slate-200 bg-white text-slate-900 shadow-lg transition-all duration-300 ease-in-out;
+  }
+  .kanban-column-header {
+    @apply font-semibold text-slate-900 text-base tracking-wide text-center;
+  }
+
+  .kanban-column-header h3 {
+    @apply w-full;
   }
 }
+
+@layer utilities {
+  .animate-fade-in-up {
+    animation: fade-in-up 500ms ease forwards;
+  }
+  .animate-pop {
+    animation: pop 400ms ease both;
+  }
+}
+
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.5;
+  }
+  70% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+ 

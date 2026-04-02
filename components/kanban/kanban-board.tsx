@@ -12,14 +12,14 @@ const avatars = {
   emma: "https://api.dicebear.com/7.x/avataaars/svg?seed=Emma&backgroundColor=d1d4f9",
 }
 
-interface Column {
+export interface Column {
   id: string
   title: string
   count?: string
   tasks: Task[]
 }
 
-const initialColumns: Column[] = [
+export const initialColumns: Column[] = [
   {
     id: "todo",
     title: "To-do",
@@ -92,8 +92,15 @@ const doneDateLabels = [
   { taskIds: ["22", "23"], label: "Friday, 1 September" },
 ]
 
-export function KanbanBoard() {
-  const [columns, setColumns] = useState<Column[]>(initialColumns)
+interface KanbanBoardProps {
+  columns?: Column[]
+  onColumnsChange?: React.Dispatch<React.SetStateAction<Column[]>>
+}
+
+export function KanbanBoard({ columns: columnsProp, onColumnsChange }: KanbanBoardProps = {}) {
+  const [localColumns, setLocalColumns] = useState<Column[]>(initialColumns)
+  const columns = columnsProp ?? localColumns
+  const setColumns = onColumnsChange ?? setLocalColumns
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null)
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null)
 
@@ -118,6 +125,29 @@ export function KanbanBoard() {
     )
   }
 
+  const handleTaskUpdate = (
+    taskId: string,
+    updates: Partial<Pick<Task, "title" | "description" | "deadline" | "attachments">>
+  ) => {
+    setColumns((prev) =>
+      prev.map((column) => ({
+        ...column,
+        tasks: column.tasks.map((task) =>
+          task.id === taskId ? { ...task, ...updates } : task
+        ),
+      }))
+    )
+
+    // Send to Firebase Cloud Function
+    fetch("/api/task/update-task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId, updates }),
+    }).catch((error) => {
+      console.error("Real-time update failed", error)
+    })
+  }
+
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
     setDraggedTaskId(taskId)
     e.dataTransfer.effectAllowed = "move"
@@ -126,6 +156,22 @@ export function KanbanBoard() {
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
     e.preventDefault()
     setDragOverColumn(columnId)
+  }
+
+  const handleAddTask = (columnId: string) => {
+    const newTask: Task = {
+      id: `${columnId}-${Date.now()}`,
+      title: "New task",
+      color: "blue",
+      avatar: avatars.alex,
+    }
+    setColumns((prev) =>
+      prev.map((column) =>
+        column.id === columnId
+          ? { ...column, tasks: [...column.tasks, newTask] }
+          : column
+      )
+    )
   }
 
   const handleDrop = (e: React.DragEvent, targetColumnId: string) => {
@@ -170,11 +216,23 @@ export function KanbanBoard() {
 
   const getColumnGroups = (column: Column) => {
     if (column.id === "done") {
-      return doneDateLabels.map((group) => ({
-        label: group.label,
-        tasks: column.tasks.filter((task) => group.taskIds.includes(task.id)),
-      })).filter((group) => group.tasks.length > 0)
+      const grouped = doneDateLabels
+        .map((group) => ({
+          label: group.label,
+          tasks: column.tasks.filter((task) => group.taskIds.includes(task.id)),
+        }))
+        .filter((group) => group.tasks.length > 0)
+
+      const groupedIds = grouped.flatMap((group) => group.tasks.map((task) => task.id))
+      const remaining = column.tasks.filter((task) => !groupedIds.includes(task.id))
+
+      if (remaining.length > 0) {
+        grouped.push({ label: "Other", tasks: remaining })
+      }
+
+      return grouped
     }
+
     return [{ tasks: column.tasks }]
   }
 
@@ -187,7 +245,7 @@ export function KanbanBoard() {
           count={column.count}
           groups={getColumnGroups(column)}
           onSubtaskToggle={handleSubtaskToggle}
-          onDragStart={handleDragStart}
+          onTaskUpdate={handleTaskUpdate}          onAddTask={() => handleAddTask(column.id)}          onDragStart={handleDragStart}
           onDragOver={(e) => handleDragOver(e, column.id)}
           onDrop={(e) => handleDrop(e, column.id)}
           isDragOver={dragOverColumn === column.id}
