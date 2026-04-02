@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Board Attachments ─────────────────────────────────
+    // Path: boards/{boardId}/tasks/{taskId}/{fileName}
+    match /boards/{boardId}/tasks/{taskId}/{fileName} {
+
+      // Allow reads for authenticated users
+      // (Board membership is verified at the Cloud Function level)
+      allow read: if request.auth != null;
+
+      // Allow uploads for authenticated users with constraints
+      // (Board membership is verified at the Cloud Function level)
+      allow write: if request.auth != null
+        && request.resource.size < 10 * 1024 * 1024  // 10MB max
+        && request.resource.contentType.matches('image/.*|application/pdf|application/msword|application/vnd\\.openxmlformats-officedocument\\..*|text/plain|text/csv');
+    }
+
+    // Deny everything else by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

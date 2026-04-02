@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper Functions ──────────────────────────────────
+    
+    // Check if the request is from an authenticated user
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated user is a member of a specific board
+    function isBoardMember(boardId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/boardMembers/$(request.auth.uid + "_" + boardId));
+    }
+
+    // Check if the authenticated user is an admin or owner of a board
+    function isBoardAdmin(boardId) {
+      let memberDoc = get(/databases/$(database)/documents/boardMembers/$(request.auth.uid + "_" + boardId));
+      return isAuthenticated() &&
+        memberDoc != null &&
+        (memberDoc.data.role == "owner" || memberDoc.data.role == "admin");
+    }
+
+    // ── Users Collection ──────────────────────────────────
+    // Users can read their own profile. Writes are handled by Cloud Functions.
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if false; // Only Cloud Functions (admin SDK) write here
+    }
+
+    // ── Boards Collection ─────────────────────────────────
+    // Board members can read. Only Cloud Functions create/update/delete.
+    match /boards/{boardId} {
+      allow read: if isBoardMember(boardId);
+      allow write: if false; // Only Cloud Functions (admin SDK) write here
+    }
+
+    // ── BoardMembers Collection ───────────────────────────
+    // Members can read their own membership. Admin SDK handles writes.
+    match /boardMembers/{memberId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only Cloud Functions (admin SDK) write here
+    }
+
+    // ── Tasks Collection ──────────────────────────────────
+    // Board members can read tasks. Cloud Functions handle writes.
+    match /tasks/{taskId} {
+      allow read: if isAuthenticated() &&
+        isBoardMember(resource.data.boardId);
+      allow write: if false; // Only Cloud Functions (admin SDK) write here
+    }
+
+    // ── Attachments Collection ────────────────────────────
+    // Board members can read attachments. Cloud Functions handle writes.
+    match /attachments/{attachmentId} {
+      allow read: if isAuthenticated() &&
+        isBoardMember(resource.data.boardId);
+      allow write: if false; // Only Cloud Functions (admin SDK) write here
+    }
+
+    // ── Activity Log Collection ───────────────────────────
+    // Board members can read logs. Only Cloud Functions write.
+    match /activityLog/{logId} {
+      allow read: if isAuthenticated() &&
+        isBoardMember(resource.data.boardId);
+      allow write: if false; // Only Cloud Functions (admin SDK) write here
+    }
+  }
+}
