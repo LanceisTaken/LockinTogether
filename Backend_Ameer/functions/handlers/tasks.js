@@ -22,9 +22,9 @@ const createTask = onRequest({ region: REGION }, (req, res) => {
       }
 
       const decodedToken = await verifyAuth(req);
-      const { boardId, title, description, status, deadline, assignedTo } = req.body;
+      const { boardId, title, description, status, deadline, assignedTo, coEditors } = req.body;
 
-      requireFields(req.body, ["boardId", "title", "status"]);
+      requireFields(req.body, ["boardId", "title"]);
       validateString(title, "title", 200);
       if (description !== undefined) validateString(description, "description", 2000);
 
@@ -34,9 +34,10 @@ const createTask = onRequest({ region: REGION }, (req, res) => {
       if (!boardDoc.exists) return res.status(404).json({ error: "Board not found." });
 
       const boardColumns = boardDoc.data().columns;
-      if (!boardColumns.includes(status)) {
+      const taskStatus = status || boardColumns[0]; // Default to first column (e.g. "To-Do")
+      if (!boardColumns.includes(taskStatus)) {
         return res.status(400).json({
-          error: `Invalid column "${status}". Available columns: ${boardColumns.join(", ")}`,
+          error: `Invalid column "${taskStatus}". Available columns: ${boardColumns.join(", ")}`,
         });
       }
 
@@ -47,16 +48,26 @@ const createTask = onRequest({ region: REGION }, (req, res) => {
         }
       }
 
+      // Validate coEditors are board members
+      const validCoEditors = [];
+      if (coEditors && Array.isArray(coEditors)) {
+        for (const editorId of coEditors) {
+          const editorDoc = await db.collection("boardMembers").doc(`${editorId}_${boardId}`).get();
+          if (editorDoc.exists) validCoEditors.push(editorId);
+        }
+      }
+
       const existingTasks = await db.collection("tasks")
-        .where("boardId", "==", boardId).where("status", "==", status)
+        .where("boardId", "==", boardId).where("status", "==", taskStatus)
         .orderBy("columnIndex", "desc").limit(1).get();
 
       const nextIndex = existingTasks.empty ? 0 : existingTasks.docs[0].data().columnIndex + 1;
 
       const taskData = {
         boardId, createdBy: decodedToken.uid, assignedTo: assignedTo || null,
+        coEditors: validCoEditors,
         title: title.trim(), description: description ? description.trim() : "",
-        status, columnIndex: nextIndex,
+        status: taskStatus, columnIndex: nextIndex,
         deadline: deadline ? new Date(deadline) : null,
         createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
       };
@@ -106,7 +117,7 @@ const updateTask = onRequest({ region: REGION }, (req, res) => {
       if (req.method !== "PATCH") return res.status(405).json({ error: "Method not allowed. Use PATCH." });
 
       const decodedToken = await verifyAuth(req);
-      const { taskId, boardId, title, description, deadline, assignedTo } = req.body;
+      const { taskId, boardId, title, description, deadline, assignedTo, coEditors } = req.body;
 
       requireFields(req.body, ["taskId", "boardId"]);
       await checkMembership(decodedToken.uid, boardId);
@@ -128,6 +139,16 @@ const updateTask = onRequest({ region: REGION }, (req, res) => {
           if (!assigneeDoc.exists) return res.status(400).json({ error: "Assigned user is not a member of this board." });
           updates.assignedTo = assignedTo;
         }
+      }
+
+      if (coEditors !== undefined) {
+        if (!Array.isArray(coEditors)) return res.status(400).json({ error: "coEditors must be an array." });
+        const validCoEditors = [];
+        for (const editorId of coEditors) {
+          const editorDoc = await db.collection("boardMembers").doc(`${editorId}_${boardId}`).get();
+          if (editorDoc.exists) validCoEditors.push(editorId);
+        }
+        updates.coEditors = validCoEditors;
       }
 
       if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No valid fields to update." });

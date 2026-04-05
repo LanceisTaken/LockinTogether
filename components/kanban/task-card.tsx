@@ -1,8 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { Paperclip, MessageSquare, ListTodo, Trash2 } from "lucide-react"
-import { Checkbox } from "@/components/ui/checkbox"
+import { useEffect, useState } from "react"
+import { Paperclip, Trash2, Download, X, Lock } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   Dialog,
@@ -16,255 +15,535 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import {
+  uploadAttachment,
+  getAttachmentsByTask,
+  deleteAttachment,
+  assignTask,
+  moveTask,
+  type TaskData,
+  type BoardMember,
+  type Attachment,
+} from "@/lib/api"
+import { sendNotification } from "@/lib/firebase/firestore"
 
-export type TaskColor = "blue" | "yellow" | "green" | "pink"
+const COLORS = [
+  { bg: "bg-cyan-100", border: "border-cyan-600" },
+  { bg: "bg-amber-100", border: "border-amber-600" },
+  { bg: "bg-emerald-100", border: "border-emerald-600" },
+  { bg: "bg-fuchsia-100", border: "border-fuchsia-600" },
+]
 
-export interface Subtask {
-  id: string
-  title: string
-  completed: boolean
-}
-
-export interface Task {
-  id: string
-  title: string
-  color: TaskColor
-  avatar: string
-  description?: string
-  deadline?: string
-  attachments?: File[]
-  hasAttachment?: boolean
-  hasComments?: boolean
-  hasSubtasks?: boolean
-  subtasks?: Subtask[]
+function getTaskColor(taskId: string) {
+  let hash = 0
+  for (let i = 0; i < taskId.length; i++) {
+    hash = taskId.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return COLORS[Math.abs(hash) % COLORS.length]
 }
 
 interface TaskCardProps {
-  task: Task
-  onSubtaskToggle?: (taskId: string, subtaskId: string) => void
-  onTaskUpdate?: (
+  task: TaskData
+  assignee?: BoardMember
+  boardId: string
+  members: BoardMember[]
+  columns: string[]
+  currentUserId: string
+  canEdit: boolean
+  onTaskUpdate: (
     taskId: string,
-    updates: Partial<Pick<Task, "title" | "description" | "deadline" | "attachments">>
+    updates: {
+      title?: string
+      description?: string
+      deadline?: string | null
+      coEditors?: string[]
+    }
   ) => void
-  onTaskDelete?: (taskId: string) => void
-  draggable?: boolean
-  onDragStart?: (e: React.DragEvent, taskId: string) => void
-}
-
-const colorClasses: Record<TaskColor, { bg: string; border: string }> = {
-  blue: { bg: "bg-cyan-100", border: "border border-cyan-600" },
-  yellow: { bg: "bg-amber-100", border: "border border-amber-600" },
-  green: { bg: "bg-emerald-100", border: "border border-emerald-600" },
-  pink: { bg: "bg-fuchsia-100", border: "border border-fuchsia-600" },
+  onTaskDelete: (taskId: string) => void
+  onDragStart: (e: React.DragEvent) => void
 }
 
 export function TaskCard({
   task,
-  onSubtaskToggle,
+  assignee,
+  boardId,
+  members,
+  columns,
+  currentUserId,
+  canEdit,
   onTaskUpdate,
   onTaskDelete,
-  draggable = true,
   onDragStart,
 }: TaskCardProps) {
-  const [expanded, setExpanded] = useState(task.hasSubtasks)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description || "")
-  const [deadline, setDeadline] = useState(task.deadline || "")
-  const [attachments, setAttachments] = useState<File[]>(task.attachments || [])
+  const [deadline, setDeadline] = useState(
+    task.deadline ? new Date(task.deadline).toISOString().split("T")[0] : ""
+  )
+  const [selectedAssignee, setSelectedAssignee] = useState(task.assignedTo || "")
+  const [selectedStatus, setSelectedStatus] = useState(task.status)
+  const [coEditors, setCoEditors] = useState<string[]>(task.coEditors || [])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [isUploading, setIsUploading] = useState(false)
 
-  const colors = colorClasses[task.color]
+  // State change request (for non-editors)
+  const [requestStatus, setRequestStatus] = useState("")
+  const [requestSent, setRequestSent] = useState(false)
 
-  const handleSave = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    onTaskUpdate?.(task.id, { title, description, deadline, attachments })
+  const isAssigned = task.assignedTo === currentUserId
+  const colors = getTaskColor(task.taskId)
+
+  useEffect(() => {
+    if (isDialogOpen) {
+      getAttachmentsByTask(task.taskId, boardId)
+        .then((data) => setAttachments(data.attachments))
+        .catch((err) => console.error("Failed to load attachments:", err))
+    }
+  }, [isDialogOpen, task.taskId, boardId])
+
+  useEffect(() => {
+    setTitle(task.title)
+    setDescription(task.description || "")
+    setDeadline(
+      task.deadline ? new Date(task.deadline).toISOString().split("T")[0] : ""
+    )
+    setSelectedAssignee(task.assignedTo || "")
+    setSelectedStatus(task.status)
+    setCoEditors(task.coEditors || [])
+    setRequestSent(false)
+  }, [task])
+
+  // ── Creator/Co-editor: Save all changes ─────────────────
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    onTaskUpdate(task.taskId, {
+      title,
+      description,
+      deadline: deadline || null,
+      coEditors,
+    })
+
+    // Handle assignee change
+    if (selectedAssignee !== (task.assignedTo || "")) {
+      try {
+        await assignTask({
+          taskId: task.taskId,
+          boardId,
+          assignedTo: selectedAssignee || null,
+        })
+      } catch (err) {
+        console.error("Failed to assign task:", err)
+      }
+    }
+
+    // Handle status change
+    if (selectedStatus !== task.status) {
+      try {
+        await moveTask({
+          taskId: task.taskId,
+          boardId,
+          newStatus: selectedStatus,
+        })
+      } catch (err) {
+        console.error("Failed to move task:", err)
+      }
+    }
+
     setIsDialogOpen(false)
   }
 
   const handleDelete = () => {
-    onTaskDelete?.(task.id)
+    onTaskDelete(task.taskId)
     setIsDialogOpen(false)
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const filesArray = Array.from(e.target.files)
-      setAttachments(filesArray)
+  // ── Assigned member: Request state change ───────────────
+
+  const handleRequestStateChange = async () => {
+    if (!requestStatus || requestStatus === task.status) return
+
+    const senderMember = members.find((m) => m.userId === currentUserId)
+    const senderName = senderMember?.displayName || senderMember?.email || "A member"
+
+    // Send to creator
+    await sendNotification({
+      recipientId: task.createdBy,
+      senderId: currentUserId,
+      senderName,
+      boardId,
+      taskId: task.taskId,
+      taskTitle: task.title,
+      type: "state_change_request",
+      requestedStatus: requestStatus,
+      message: `${senderName} requests to move "${task.title}" to "${requestStatus}"`,
+    })
+
+    // Also notify co-editors
+    if (task.coEditors) {
+      for (const editorId of task.coEditors) {
+        if (editorId !== currentUserId) {
+          await sendNotification({
+            recipientId: editorId,
+            senderId: currentUserId,
+            senderName,
+            boardId,
+            taskId: task.taskId,
+            taskTitle: task.title,
+            type: "state_change_request",
+            requestedStatus: requestStatus,
+            message: `${senderName} requests to move "${task.title}" to "${requestStatus}"`,
+          })
+        }
+      }
+    }
+
+    setRequestSent(true)
+  }
+
+  // ── File handling ───────────────────────────────────────
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return
+    setIsUploading(true)
+    try {
+      for (const file of Array.from(e.target.files)) {
+        const result = await uploadAttachment(boardId, task.taskId, file)
+        setAttachments((prev) => [result.attachment, ...prev])
+      }
+    } catch (err) {
+      console.error("Upload failed:", err)
+    } finally {
+      setIsUploading(false)
+      e.target.value = ""
     }
   }
+
+  const handleDeleteAttachment = async (attachmentId: string) => {
+    try {
+      await deleteAttachment(attachmentId, boardId)
+      setAttachments((prev) => prev.filter((a) => a.attachmentId !== attachmentId))
+    } catch (err) {
+      console.error("Failed to delete attachment:", err)
+    }
+  }
+
+  const toggleCoEditor = (userId: string) => {
+    setCoEditors((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    )
+  }
+
+  const initials = assignee
+    ? (assignee.displayName || assignee.email || "?")[0].toUpperCase()
+    : null
+
+  const creatorMember = members.find((m) => m.userId === task.createdBy)
+
+  // Check if task is overdue: has a deadline, deadline has passed, and not in the last column (Done)
+  const lastColumn = columns[columns.length - 1]
+  const isOverdue =
+    task.deadline &&
+    task.status !== lastColumn &&
+    new Date(task.deadline).getTime() < Date.now()
 
   return (
     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
       <DialogTrigger asChild>
         <div
-          draggable={draggable}
-          onDragStart={(e) => onDragStart?.(e, task.id)}
+          draggable={canEdit}
+          onDragStart={onDragStart}
           className={cn(
-            "rounded-lg p-3 cursor-grab active:cursor-grabbing transition-all duration-300 hover:shadow-2xl hover:-translate-y-0.5 animate-fade-in-up",
-            colors.bg,
-            colors.border
+            "rounded-lg p-3 transition-all duration-300 hover:shadow-2xl hover:-translate-y-0.5 animate-fade-in-up border",
+            canEdit ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+            isOverdue
+              ? "bg-red-100 border-red-500"
+              : cn(colors.bg, colors.border)
           )}
         >
           <div className="flex items-start justify-between gap-2">
             <p className="text-sm font-medium text-black leading-snug flex-1">
               {task.title}
             </p>
-            <img
-              src={task.avatar}
-              alt="User"
-              className="w-7 h-7 rounded-full object-cover shrink-0"
-            />
+            {initials && (
+              <div
+                className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-medium text-primary shrink-0"
+                title={assignee?.displayName || assignee?.email}
+              >
+                {initials}
+              </div>
+            )}
           </div>
-
-          {(task.hasAttachment || task.hasComments || task.hasSubtasks) && (
-            <div className="flex items-center gap-2 mt-2 text-muted-foreground">
-              {task.hasSubtasks && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setExpanded(!expanded)
-                  }}
-                  className="hover:text-foreground transition-colors"
-                >
-                  <ListTodo className="w-4 h-4" />
-                </button>
-              )}
-              {task.hasAttachment && <Paperclip className="w-4 h-4" />}
-              {task.hasComments && <MessageSquare className="w-4 h-4" />}
-            </div>
+          {task.deadline && (
+            <p className={cn(
+              "text-xs mt-1",
+              isOverdue ? "text-red-600 font-medium" : "text-muted-foreground"
+            )}>
+              {isOverdue ? "Overdue: " : "Due: "}
+              {new Date(task.deadline).toLocaleDateString()}
+            </p>
           )}
-
-          {expanded && task.subtasks && task.subtasks.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-dashed border-muted-foreground/30 space-y-2">
-              {task.subtasks.map((subtask) => (
-                <label
-                  key={subtask.id}
-                  className="flex items-center gap-2 text-sm cursor-pointer group"
-                >
-                  <Checkbox
-                    checked={subtask.completed}
-                    onCheckedChange={() =>
-                      onSubtaskToggle?.(task.id, subtask.id)
-                    }
-                    className="w-4 h-4"
-                  />
-                  <span
-                    className={cn(
-                      "text-black transition-colors",
-                      subtask.completed &&
-                        "line-through text-muted-foreground"
-                    )}
-                  >
-                    {subtask.title}
-                  </span>
-                </label>
-              ))}
+          {!canEdit && isAssigned && (
+            <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+              <Lock className="w-3 h-3" /> View only
             </div>
           )}
         </div>
       </DialogTrigger>
 
-      <DialogContent>
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Task</DialogTitle>
+          <DialogTitle>{canEdit ? "Edit Task" : "Task Details"}</DialogTitle>
           <DialogDescription>
-            Update task details and save changes.
+            {canEdit
+              ? "Update task details, status, and co-editors."
+              : `Created by ${creatorMember?.displayName || creatorMember?.email || "Unknown"}. You can request a status change.`}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSave} className="space-y-4 mt-2">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Title</label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-            />
-          </div>
+        {canEdit ? (
+          /* ── Full edit form for creator/co-editors ── */
+          <form onSubmit={handleSave} className="space-y-4 mt-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Title</label>
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
+            </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Description</label>
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Description</label>
+              <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Deadline</label>
-            <Input
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-            />
-          </div>
-
-          {/* Custom File Upload */}
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Attachments</label>
-
-            <input
-              type="file"
-              multiple
-              onChange={handleFileChange}
-              className="hidden"
-              id={`file-upload-${task.id}`}
-            />
-
-            <label
-              htmlFor={`file-upload-${task.id}`}
-              className="inline-flex items-center gap-2 px-45.5 py-2 text-sm border rounded-md cursor-pointer transition-all duration-200 hover:bg-muted hover:border-slate-400 hover:shadow-sm active:scale-95"
-            >
-              📎 Upload Files
-            </label>
-
-            {attachments.length > 0 && (
-              <div className="mt-4 space-y-1 text-sm text-muted-foreground">
-                {attachments.map((file, index) => (
-                  <div key={index} className="truncate">
-                    📎 {file.name}
-                  </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Status</label>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                {columns.map((col) => (
+                  <option key={col} value={col}>{col}</option>
                 ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Deadline</label>
+              <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Assign to</label>
+              <select
+                value={selectedAssignee}
+                onChange={(e) => setSelectedAssignee(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Unassigned</option>
+                {members.map((m) => (
+                  <option key={m.userId} value={m.userId}>
+                    {m.displayName || m.email} ({m.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Co-editors</label>
+              <div className="max-h-28 overflow-y-auto space-y-1 rounded-md border border-input p-2">
+                {members
+                  .filter((m) => m.userId !== task.createdBy)
+                  .map((m) => (
+                    <label
+                      key={m.userId}
+                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted rounded px-1 py-0.5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={coEditors.includes(m.userId)}
+                        onChange={() => toggleCoEditor(m.userId)}
+                        className="rounded"
+                      />
+                      {m.displayName || m.email}
+                    </label>
+                  ))}
               </div>
-            )}
-          </div>
+            </div>
 
-          <DialogFooter className="flex justify-between">
-            {/* Delete — red glow + lift */}
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={handleDelete}
-              className="flex items-center gap-2 transition-all duration-200 hover:brightness-110 hover:shadow-[0_0_14px_3px_rgba(239,68,68,0.5)] hover:-translate-y-0.5 active:scale-95"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </Button>
+            {/* Attachments */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Attachments</label>
+              <input
+                type="file"
+                multiple
+                onChange={handleFileUpload}
+                className="hidden"
+                id={`file-upload-${task.taskId}`}
+              />
+              <label
+                htmlFor={`file-upload-${task.taskId}`}
+                className={cn(
+                  "inline-flex items-center gap-2 px-4 py-2 text-sm border rounded-md cursor-pointer transition-all duration-200 hover:bg-muted hover:border-slate-400 hover:shadow-sm active:scale-95",
+                  isUploading && "opacity-50 pointer-events-none"
+                )}
+              >
+                <Paperclip className="w-4 h-4" />
+                {isUploading ? "Uploading..." : "Upload Files"}
+              </label>
+              {attachments.length > 0 && (
+                <div className="space-y-1">
+                  {attachments.map((att) => (
+                    <div
+                      key={att.attachmentId}
+                      className="flex items-center justify-between text-sm bg-muted rounded px-2 py-1"
+                    >
+                      <span className="truncate flex-1">{att.fileName}</span>
+                      <div className="flex items-center gap-1 ml-2 shrink-0">
+                        <a
+                          href={att.storageURL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-muted-foreground hover:text-primary"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAttachment(att.attachmentId)}
+                          className="text-muted-foreground hover:text-red-600"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            <div className="flex gap-2">
-              {/* Cancel — lift + border + bg tint */}
-              <DialogClose asChild>
+            <DialogFooter className="flex justify-between">
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDelete}
+                className="flex items-center gap-2 transition-all duration-200 hover:brightness-110 hover:shadow-[0_0_14px_3px_rgba(239,68,68,0.5)] hover:-translate-y-0.5 active:scale-95"
+              >
+                <Trash2 className="w-4 h-4" /> Delete
+              </Button>
+              <div className="flex gap-2">
+                <DialogClose asChild>
+                  <Button type="button" variant="secondary">Cancel</Button>
+                </DialogClose>
                 <Button
-                  type="button"
+                  type="submit"
                   variant="secondary"
                   className="transition-all duration-200 hover:bg-blue-600 hover:text-white hover:shadow-[0_0_14px_3px_rgba(37,99,235,0.45)] hover:-translate-y-0.5 active:scale-95"
                 >
-                  Cancel
+                  Save Changes
                 </Button>
-              </DialogClose>
-
-              {/* Save Changes — blue fill + glow + lift */}
-              <Button
-                type="submit"
-                variant="secondary"
-                className="transition-all duration-200 hover:bg-blue-600 hover:text-white hover:shadow-[0_0_14px_3px_rgba(37,99,235,0.45)] hover:-translate-y-0.5 active:scale-95"
-              >
-                Save Changes
-              </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        ) : (
+          /* ── Read-only view for assigned members / others ── */
+          <div className="space-y-4 mt-2">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Title</p>
+              <p className="text-sm">{task.title}</p>
             </div>
-          </DialogFooter>
-        </form>
+            {task.description && (
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Description</p>
+                <p className="text-sm">{task.description}</p>
+              </div>
+            )}
+            <div className="flex gap-6">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Status</p>
+                <p className="text-sm">{task.status}</p>
+              </div>
+              {task.deadline && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Deadline</p>
+                  <p className="text-sm">{new Date(task.deadline).toLocaleDateString()}</p>
+                </div>
+              )}
+            </div>
+            {assignee && (
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Assigned to</p>
+                <p className="text-sm">{assignee.displayName || assignee.email}</p>
+              </div>
+            )}
+
+            {/* Attachments (view-only) */}
+            {attachments.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-1">Attachments</p>
+                <div className="space-y-1">
+                  {attachments.map((att) => (
+                    <div
+                      key={att.attachmentId}
+                      className="flex items-center text-sm bg-muted rounded px-2 py-1"
+                    >
+                      <Paperclip className="w-3.5 h-3.5 mr-1 shrink-0 text-muted-foreground" />
+                      <a
+                        href={att.storageURL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate hover:underline text-primary"
+                      >
+                        {att.fileName}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Request state change (assigned members only) */}
+            {isAssigned && (
+              <div className="border-t pt-4">
+                <p className="text-sm font-medium mb-2">Request status change</p>
+                {requestSent ? (
+                  <p className="text-sm text-emerald-600">Request sent to the task creator.</p>
+                ) : (
+                  <div className="flex gap-2">
+                    <select
+                      value={requestStatus}
+                      onChange={(e) => setRequestStatus(e.target.value)}
+                      className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">Select status...</option>
+                      {columns
+                        .filter((col) => col !== task.status)
+                        .map((col) => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                    </select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!requestStatus}
+                      onClick={handleRequestStateChange}
+                    >
+                      Request
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="secondary">Close</Button>
+              </DialogClose>
+            </DialogFooter>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )

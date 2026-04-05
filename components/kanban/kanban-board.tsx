@@ -2,255 +2,306 @@
 
 import { useState } from "react"
 import { KanbanColumn } from "./kanban-column"
-import { Task, TaskColor } from "./task-card"
+import { TaskCard } from "./task-card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from "@/components/ui/dialog"
+import { PlusCircle } from "lucide-react"
+import {
+  createTask,
+  updateTask,
+  moveTask,
+  deleteTask,
+  type TaskData,
+  type BoardMember,
+} from "@/lib/api"
 
-// Avatar URLs for demo
-const avatars = {
-  alex: "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex&backgroundColor=b6e3f4",
-  sarah: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah&backgroundColor=ffd5dc",
-  mike: "https://api.dicebear.com/7.x/avataaars/svg?seed=Mike&backgroundColor=c0aede",
-  emma: "https://api.dicebear.com/7.x/avataaars/svg?seed=Emma&backgroundColor=d1d4f9",
+export interface KanbanBoardProps {
+  boardId: string
+  columns: string[]
+  tasks: TaskData[]
+  members: BoardMember[]
+  currentUserId: string
 }
 
-export interface Column {
-  id: string
-  title: string
-  count?: string
-  tasks: Task[]
-}
-
-export const initialColumns: Column[] = [
-  {
-    id: "todo",
-    title: "To-do",
-    tasks: [
-      { id: "1", title: "Review and update sales pitch for new product", color: "blue", avatar: avatars.alex },
-      { id: "2", title: "Pay employee salaries", color: "blue", avatar: avatars.mike, hasAttachment: true },
-      { id: "3", title: "Design marketing campaign", color: "yellow", avatar: avatars.sarah },
-      { id: "4", title: "Experiment with AR/VR in app", color: "green", avatar: avatars.alex },
-      { id: "5", title: "Update employee handbook with remote work policies", color: "blue", avatar: avatars.emma },
-      { id: "6", title: "Coordinate with influencers for upcoming promotional event", color: "yellow", avatar: avatars.sarah },
-      { id: "7", title: "Implement 2FA for all systems", color: "blue", avatar: avatars.mike },
-      { id: "8", title: "Analyze ROI from recent investments", color: "blue", avatar: avatars.alex },
-      { id: "9", title: "Develop strategy for re-engaging past customers", color: "blue", avatar: avatars.sarah },
-    ],
-  },
-  {
-    id: "this-week",
-    title: "This week",
-    tasks: [
-      { id: "10", title: "Prepare and send out client invoices", color: "blue", avatar: avatars.alex },
-      { id: "11", title: "Research market trends", color: "yellow", avatar: avatars.sarah, hasAttachment: true, hasComments: true },
-      { id: "12", title: "Add AI chatbot for support", color: "green", avatar: avatars.mike },
-      { id: "13", title: "Customer reported performance issue", color: "yellow", avatar: avatars.sarah },
-      { id: "14", title: "Shortlist candidates for interviews", color: "green", avatar: avatars.emma },
-    ],
-  },
-  {
-    id: "in-progress",
-    title: "In progress",
-    count: "3 / 5",
-    tasks: [
-      { id: "15", title: "Organize team-building event", color: "green", avatar: avatars.emma },
-      { id: "16", title: "Review data pipelines for AI model training", color: "green", avatar: avatars.alex },
-      {
-        id: "17",
-        title: "Plan exhibition for upcoming trade show",
-        color: "pink",
-        avatar: avatars.sarah,
-        hasSubtasks: true,
-        hasAttachment: true,
-        subtasks: [
-          { id: "s1", title: "Decide overall budget", completed: true },
-          { id: "s2", title: "Agree on booth size and location", completed: true },
-          { id: "s3", title: "Order brochures, flyers and popups", completed: false },
-          { id: "s4", title: "Promote event on social media", completed: false },
-          { id: "s5", title: "Train staff for product demos", completed: false },
-        ],
-      },
-    ],
-  },
-  {
-    id: "done",
-    title: "Done",
-    tasks: [
-      { id: "18", title: "Evaluate sales tools", color: "pink", avatar: avatars.emma },
-      { id: "19", title: "Prototype voice-activated features", color: "green", avatar: avatars.alex },
-      { id: "20", title: "Company website is down", color: "pink", avatar: avatars.sarah },
-      { id: "21", title: "Establish mentorship program for junior staff", color: "green", avatar: avatars.emma },
-      { id: "22", title: "Test compatibility on various devices", color: "green", avatar: avatars.alex },
-      { id: "23", title: "Review monthly expenditure against budget", color: "pink", avatar: avatars.mike },
-    ],
-  },
-]
-
-// Date labels for Done column
-const doneDateLabels = [
-  { taskIds: ["18"], label: "Today" },
-  { taskIds: ["19", "20"], label: "Yesterday" },
-  { taskIds: ["21"], label: "Monday, 4 September" },
-  { taskIds: ["22", "23"], label: "Friday, 1 September" },
-]
-
-interface KanbanBoardProps {
-  columns?: Column[]
-  onColumnsChange?: React.Dispatch<React.SetStateAction<Column[]>>
-}
-
-export function KanbanBoard({ columns: columnsProp, onColumnsChange }: KanbanBoardProps = {}) {
-  const [localColumns, setLocalColumns] = useState<Column[]>(initialColumns)
-  const columns = columnsProp ?? localColumns
-  const setColumns = onColumnsChange ?? setLocalColumns
+export function KanbanBoard({ boardId, columns, tasks, members, currentUserId }: KanbanBoardProps) {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null)
+  const [dragSourceColumn, setDragSourceColumn] = useState<string | null>(null)
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null)
 
-  const handleSubtaskToggle = (taskId: string, subtaskId: string) => {
-    setColumns((prev) =>
-      prev.map((column) => ({
-        ...column,
-        tasks: column.tasks.map((task) => {
-          if (task.id === taskId && task.subtasks) {
-            return {
-              ...task,
-              subtasks: task.subtasks.map((subtask) =>
-                subtask.id === subtaskId
-                  ? { ...subtask, completed: !subtask.completed }
-                  : subtask
-              ),
-            }
-          }
-          return task
-        }),
-      }))
-    )
+  // Create task dialog state
+  const [createOpen, setCreateOpen] = useState(false)
+  const [newTitle, setNewTitle] = useState("")
+  const [newDescription, setNewDescription] = useState("")
+  const [newDeadline, setNewDeadline] = useState("")
+  const [newAssignee, setNewAssignee] = useState("")
+  const [newCoEditors, setNewCoEditors] = useState<string[]>([])
+  const [isCreating, setIsCreating] = useState(false)
+  const [createError, setCreateError] = useState("")
+
+  const tasksByColumn = (columnName: string) =>
+    tasks
+      .filter((t) => t.status === columnName)
+      .sort((a, b) => a.columnIndex - b.columnIndex)
+
+  const getMemberInfo = (userId: string | null) =>
+    members.find((m) => m.userId === userId)
+
+  const canEditTask = (task: TaskData) =>
+    task.createdBy === currentUserId ||
+    (task.coEditors && task.coEditors.includes(currentUserId))
+
+  // ── Create Task ──────────────────────────────────────────
+
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setCreateError("")
+    setIsCreating(true)
+    try {
+      await createTask({
+        boardId,
+        title: newTitle,
+        description: newDescription || undefined,
+        deadline: newDeadline || undefined,
+        assignedTo: newAssignee || undefined,
+        coEditors: newCoEditors.length > 0 ? newCoEditors : undefined,
+        // No status — backend defaults to first column (To-Do)
+      })
+      setNewTitle("")
+      setNewDescription("")
+      setNewDeadline("")
+      setNewAssignee("")
+      setNewCoEditors([])
+      setCreateOpen(false)
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Failed to create task")
+    } finally {
+      setIsCreating(false)
+    }
   }
 
-  const handleTaskUpdate = (
+  // ── Task Actions ─────────────────────────────────────────
+
+  const handleTaskUpdate = async (
     taskId: string,
-    updates: Partial<Pick<Task, "title" | "description" | "deadline" | "attachments">>
+    updates: {
+      title?: string
+      description?: string
+      deadline?: string | null
+      coEditors?: string[]
+    }
   ) => {
-    setColumns((prev) =>
-      prev.map((column) => ({
-        ...column,
-        tasks: column.tasks.map((task) =>
-          task.id === taskId ? { ...task, ...updates } : task
-        ),
-      }))
-    )
-
-    // Send to Firebase Cloud Function
-    fetch("/api/task/update-task", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, updates }),
-    }).catch((error) => {
-      console.error("Real-time update failed", error)
-    })
+    try {
+      await updateTask({ taskId, boardId, ...updates })
+    } catch (err) {
+      console.error("Failed to update task:", err)
+    }
   }
 
-  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+  const handleTaskDelete = async (taskId: string) => {
+    try {
+      await deleteTask(taskId, boardId)
+    } catch (err) {
+      console.error("Failed to delete task:", err)
+    }
+  }
+
+  // ── Drag & Drop (only for creators/co-editors) ──────────
+
+  const handleDragStart = (e: React.DragEvent, taskId: string, sourceColumn: string) => {
+    const task = tasks.find((t) => t.taskId === taskId)
+    if (!task || !canEditTask(task)) {
+      e.preventDefault()
+      return
+    }
     setDraggedTaskId(taskId)
+    setDragSourceColumn(sourceColumn)
     e.dataTransfer.effectAllowed = "move"
   }
 
-  const handleDragOver = (e: React.DragEvent, columnId: string) => {
+  const handleDragOver = (e: React.DragEvent, columnName: string) => {
     e.preventDefault()
-    setDragOverColumn(columnId)
+    setDragOverColumn(columnName)
   }
 
-  const handleAddTask = (columnId: string) => {
-    const newTask: Task = {
-      id: `${columnId}-${Date.now()}`,
-      title: "New task",
-      color: "blue",
-      avatar: avatars.alex,
-    }
-    setColumns((prev) =>
-      prev.map((column) =>
-        column.id === columnId
-          ? { ...column, tasks: [...column.tasks, newTask] }
-          : column
-      )
-    )
-  }
-
-  const handleDrop = (e: React.DragEvent, targetColumnId: string) => {
+  const handleDrop = async (e: React.DragEvent, targetColumn: string) => {
     e.preventDefault()
     if (!draggedTaskId) return
 
-    setColumns((prev) => {
-      let draggedTask: Task | null = null
-      
-      // Find and remove the dragged task
-      const newColumns = prev.map((column) => {
-        const taskIndex = column.tasks.findIndex((t) => t.id === draggedTaskId)
-        if (taskIndex !== -1) {
-          draggedTask = column.tasks[taskIndex]
-          return {
-            ...column,
-            tasks: column.tasks.filter((t) => t.id !== draggedTaskId),
-          }
-        }
-        return column
-      })
+    const targetTasks = tasksByColumn(targetColumn)
+    const newColumnIndex = targetTasks.length
 
-      // Add task to target column
-      if (draggedTask) {
-        return newColumns.map((column) => {
-          if (column.id === targetColumnId) {
-            return {
-              ...column,
-              tasks: [...column.tasks, draggedTask!],
-            }
-          }
-          return column
+    if (dragSourceColumn !== targetColumn) {
+      try {
+        await moveTask({
+          taskId: draggedTaskId,
+          boardId,
+          newStatus: targetColumn,
+          newColumnIndex,
         })
+      } catch (err) {
+        console.error("Failed to move task:", err)
       }
-
-      return newColumns
-    })
+    }
 
     setDraggedTaskId(null)
+    setDragSourceColumn(null)
     setDragOverColumn(null)
   }
 
-  const getColumnGroups = (column: Column) => {
-    if (column.id === "done") {
-      const grouped = doneDateLabels
-        .map((group) => ({
-          label: group.label,
-          tasks: column.tasks.filter((task) => group.taskIds.includes(task.id)),
-        }))
-        .filter((group) => group.tasks.length > 0)
-
-      const groupedIds = grouped.flatMap((group) => group.tasks.map((task) => task.id))
-      const remaining = column.tasks.filter((task) => !groupedIds.includes(task.id))
-
-      if (remaining.length > 0) {
-        grouped.push({ label: "Other", tasks: remaining })
-      }
-
-      return grouped
-    }
-
-    return [{ tasks: column.tasks }]
+  const toggleCoEditor = (userId: string) => {
+    setNewCoEditors((prev) =>
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId]
+    )
   }
 
   return (
-    <div className="flex gap-4 p-6 overflow-x-auto min-h-[calc(100vh-80px)]">
-      {columns.map((column) => (
-        <KanbanColumn
-          key={column.id}
-          title={column.title}
-          count={column.count}
-          groups={getColumnGroups(column)}
-          onSubtaskToggle={handleSubtaskToggle}
-          onTaskUpdate={handleTaskUpdate}          onAddTask={() => handleAddTask(column.id)}          onDragStart={handleDragStart}
-          onDragOver={(e) => handleDragOver(e, column.id)}
-          onDrop={(e) => handleDrop(e, column.id)}
-          isDragOver={dragOverColumn === column.id}
-        />
-      ))}
-    </div>
+    <>
+      <div className="flex gap-4 p-6 overflow-x-auto min-h-[calc(100vh-80px)]">
+        {columns.map((columnName) => {
+          const columnTasks = tasksByColumn(columnName)
+          return (
+            <KanbanColumn
+              key={columnName}
+              title={columnName}
+              taskCount={columnTasks.length}
+              onDragOver={(e) => handleDragOver(e, columnName)}
+              onDrop={(e) => handleDrop(e, columnName)}
+              isDragOver={dragOverColumn === columnName}
+            >
+              {columnTasks.map((task) => {
+                const assignee = getMemberInfo(task.assignedTo)
+                return (
+                  <TaskCard
+                    key={task.taskId}
+                    task={task}
+                    assignee={assignee}
+                    boardId={boardId}
+                    members={members}
+                    columns={columns}
+                    currentUserId={currentUserId}
+                    canEdit={canEditTask(task)}
+                    onTaskUpdate={handleTaskUpdate}
+                    onTaskDelete={handleTaskDelete}
+                    onDragStart={(e) => handleDragStart(e, task.taskId, columnName)}
+                  />
+                )
+              })}
+            </KanbanColumn>
+          )
+        })}
+      </div>
+
+      {/* Floating Create Task button — bottom left */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <button
+          onClick={() => setCreateOpen(true)}
+          className="fixed bottom-8 left-8 flex items-center gap-2 bg-primary text-white px-5 py-3 rounded-full shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 active:scale-95 z-50"
+        >
+          <PlusCircle className="w-5 h-5" />
+          <span className="font-medium">Create Task</span>
+        </button>
+
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Task</DialogTitle>
+            <DialogDescription>
+              New tasks are added to the first column ({columns[0] || "To-Do"}).
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateTask} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Title</label>
+              <Input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                required
+                placeholder="Task title"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Description</label>
+              <Input
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="Optional description"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Deadline</label>
+              <Input
+                type="date"
+                value={newDeadline}
+                onChange={(e) => setNewDeadline(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Assign to</label>
+              <select
+                value={newAssignee}
+                onChange={(e) => setNewAssignee(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Unassigned</option>
+                {members.map((m) => (
+                  <option key={m.userId} value={m.userId}>
+                    {m.displayName || m.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Co-editors (can edit this task)</label>
+              <div className="max-h-32 overflow-y-auto space-y-1 rounded-md border border-input p-2">
+                {members
+                  .filter((m) => m.userId !== currentUserId)
+                  .map((m) => (
+                    <label
+                      key={m.userId}
+                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted rounded px-1 py-0.5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={newCoEditors.includes(m.userId)}
+                        onChange={() => toggleCoEditor(m.userId)}
+                        className="rounded"
+                      />
+                      {m.displayName || m.email}
+                    </label>
+                  ))}
+                {members.filter((m) => m.userId !== currentUserId).length === 0 && (
+                  <p className="text-xs text-muted-foreground">No other members to add.</p>
+                )}
+              </div>
+            </div>
+
+            {createError && <p className="text-sm text-red-600">{createError}</p>}
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button type="submit" disabled={isCreating}>
+                {isCreating ? "Creating..." : "Create Task"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
