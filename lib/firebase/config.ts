@@ -1,15 +1,28 @@
-import { initializeApp, getApps } from "firebase/app"
+import { initializeApp, getApps, type FirebaseOptions } from "firebase/app"
 import { getAuth, connectAuthEmulator } from "firebase/auth"
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore"
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "demo-api-key",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "localhost",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "lockintogether-9c05f",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "lockintogether-9c05f.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "000000000000",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:000000000000:web:0000000000000000",
+function resolveFirebaseConfig(): FirebaseOptions {
+  const snapshot = process.env.NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG
+  if (snapshot) {
+    try {
+      const parsed = JSON.parse(snapshot) as FirebaseOptions
+      if (parsed.apiKey && parsed.projectId) return parsed
+    } catch {
+      /* fall through */
+    }
+  }
+  return {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "demo-api-key",
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "localhost",
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "lockintogether-9c05f",
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "lockintogether-9c05f.appspot.com",
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "000000000000",
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:000000000000:web:0000000000000000",
+  }
 }
+
+const firebaseConfig = resolveFirebaseConfig()
 
 // Initialize Firebase only if it hasn't been initialized
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]

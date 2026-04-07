@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Script from "next/script"
 import { Globe, Lock, Mail, AlertCircle } from "lucide-react"
-import { GoogleAuthProvider, signInWithCredential } from "firebase/auth"
+import { GoogleAuthProvider, signInWithCredential, type AuthError } from "firebase/auth"
 import { auth } from "@/lib/firebase/config"
 import { useAuth } from "@/lib/firebase/auth-context"
 import { Button } from "@/components/ui/button"
@@ -42,8 +42,16 @@ export default function LoginPage() {
         const googleCredential = GoogleAuthProvider.credential(credential)
         await signInWithCredential(auth, googleCredential)
         router.replace("/")
-      } catch {
-        setError("Google sign-in failed. Please try again.")
+      } catch (err) {
+        const code = (err as AuthError)?.code
+        console.error("Google sign-in error:", code, err)
+        if (code === "auth/account-exists-with-different-credential") {
+          setError("This email uses another sign-in method. Use email/password.")
+        } else if (code === "auth/invalid-credential") {
+          setError("Google sign-in could not verify your session. Try again.")
+        } else {
+          setError("Google sign-in failed. Please try again.")
+        }
       } finally {
         setIsSigningIn(false)
       }
