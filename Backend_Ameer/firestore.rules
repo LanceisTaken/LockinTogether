@@ -46,7 +46,7 @@ service cloud.firestore {
     // BoardMembers collection
     match /boardMembers/{memberId} {
       allow read: if isLoggedIn();
-      allow create: if isLoggedIn() && isBoardAdmin(resource.data.boardId);
+      allow create: if isLoggedIn() && isBoardAdmin(request.resource.data.boardId);
       allow update: if isLoggedIn() && isBoardOwner(resource.data.boardId);
       allow delete: if isLoggedIn() && isBoardAdmin(resource.data.boardId);
     }
