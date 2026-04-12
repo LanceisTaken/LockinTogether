@@ -58,7 +58,7 @@ interface ActivityLogProps {
 }
 
 export function ActivityLog({ boardId }: ActivityLogProps) {
-  const { logs, loading } = useActivityLogRealtime(boardId, 30)
+  const { logs, loading, error } = useActivityLogRealtime(boardId, 30)
 
   return (
     <div className="p-4">
@@ -71,6 +71,8 @@ export function ActivityLog({ boardId }: ActivityLogProps) {
         <div className="flex justify-center py-8">
           <Spinner className="h-5 w-5 text-primary" />
         </div>
+      ) : error ? (
+        <p className="text-sm text-red-600 text-center py-8">{error}</p>
       ) : logs.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">
           No activity yet

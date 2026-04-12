@@ -17,13 +17,18 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog"
-import { LayoutGrid, PlusCircle, Users, Trash2 } from "lucide-react"
+import { LayoutGrid, PlusCircle, Users, Trash2, Bell } from "lucide-react"
 import { getBoards, createBoard, deleteBoard, type Board } from "@/lib/api"
 import { useAuth } from "@/lib/firebase/auth-context"
+import { useNotificationsRealtime } from "@/lib/firebase/firestore"
+import { NotificationsSidebar } from "@/components/notifications-sidebar"
 
 export default function Home() {
   const router = useRouter()
   const { user } = useAuth()
+  const currentUserId = user?.uid || ""
+  const { unreadCount } = useNotificationsRealtime(currentUserId)
+  const [showNotifications, setShowNotifications] = useState(false)
   const [boards, setBoards] = useState<Board[]>([])
   const [loadingBoards, setLoadingBoards] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -31,19 +36,27 @@ export default function Home() {
   const [description, setDescription] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const [boardsError, setBoardsError] = useState("")
 
   useEffect(() => {
     if (!user) return
     loadBoards()
   }, [user])
 
+  // Reload boards when notifications panel closes (user may have accepted an invite)
+  useEffect(() => {
+    if (!showNotifications && user) loadBoards()
+  }, [showNotifications])
+
   const loadBoards = async () => {
     try {
       setLoadingBoards(true)
+      setBoardsError("")
       const data = await getBoards()
       setBoards(data.boards)
     } catch (err: unknown) {
       console.error("Failed to load boards:", err)
+      setBoardsError(err instanceof Error ? err.message : "Failed to load boards")
     } finally {
       setLoadingBoards(false)
     }
@@ -73,7 +86,7 @@ export default function Home() {
       await deleteBoard(boardId)
       setBoards((prev) => prev.filter((b) => b.boardId !== boardId))
     } catch (err: unknown) {
-      console.error("Failed to delete board:", err)
+      alert(err instanceof Error ? err.message : "Failed to delete board")
     }
   }
 
@@ -137,14 +150,38 @@ export default function Home() {
                 </form>
               </DialogContent>
             </Dialog>
+
+            {/* Notifications bell */}
+            <Button
+              variant="secondary"
+              size="sm"
+              className="relative"
+              onClick={() => setShowNotifications(!showNotifications)}
+            >
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </Button>
+
             <UserMenu />
           </div>
         </header>
 
-        <div className="p-8">
+        <div className="flex">
+        <div className={showNotifications ? "flex-1 min-w-0 p-8" : "w-full p-8"}>
           {loadingBoards ? (
             <div className="flex items-center justify-center py-20">
               <Spinner className="h-8 w-8 text-primary" />
+            </div>
+          ) : boardsError ? (
+            <div className="text-center py-20">
+              <p className="text-red-600 font-medium">{boardsError}</p>
+              <Button variant="outline" className="mt-4" onClick={loadBoards}>
+                Retry
+              </Button>
             </div>
           ) : boards.length === 0 ? (
             <div className="text-center py-20 text-muted-foreground">
@@ -189,6 +226,15 @@ export default function Home() {
               ))}
             </div>
           )}
+        </div>
+        {showNotifications && (
+          <div className="w-80 border-l border-border bg-slate-50 overflow-y-auto max-h-[calc(100vh-80px)]">
+            <NotificationsSidebar
+              userId={currentUserId}
+              canEditTask={() => false}
+            />
+          </div>
+        )}
         </div>
       </main>
     </ProtectedRoute>

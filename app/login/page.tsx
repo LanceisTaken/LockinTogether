@@ -60,9 +60,14 @@ export default function LoginPage() {
 
   // Render the official Google button once GIS script is ready
   const handleGISLoad = () => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+    if (!clientId) {
+      console.error("Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID environment variable")
+      return
+    }
     if (window.google && googleButtonRef.current) {
       window.google.accounts.id.initialize({
-        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
+        client_id: clientId,
         callback: window.handleGoogleCredential,
       })
       window.google.accounts.id.renderButton(googleButtonRef.current, {
@@ -99,6 +104,7 @@ export default function LoginPage() {
       } else if (code === "auth/too-many-requests") {
         setError("Too many attempts. Please wait a moment and try again.")
       } else {
+        console.error("Unexpected auth error:", code, err)
         setError("Something went wrong. Please try again.")
       }
     } finally {

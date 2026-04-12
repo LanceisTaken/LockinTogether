@@ -1,5 +1,6 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/firebase/auth-context"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -13,6 +14,7 @@ import {
 import { LogOut, User } from "lucide-react"
 
 export function UserMenu() {
+  const router = useRouter()
   const { user, signOut } = useAuth()
 
   if (!user) return null
@@ -46,7 +48,7 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={() => router.push("/profile")}>
           <User className="mr-2 h-4 w-4" />
           <span>Profile</span>
         </DropdownMenuItem>

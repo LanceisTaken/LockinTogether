@@ -27,7 +27,8 @@ import {
   useBoardMembersRealtime,
   useNotificationsRealtime,
 } from "@/lib/firebase/firestore"
-import { addBoardMember } from "@/lib/api"
+import { searchUserByEmail } from "@/lib/api"
+import { sendNotification } from "@/lib/firebase/firestore"
 import { useAuth } from "@/lib/firebase/auth-context"
 
 type RightPanel = "none" | "activity" | "notifications"
@@ -38,8 +39,8 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   const { user } = useAuth()
   const currentUserId = user?.uid || ""
 
-  const { board, loading: boardLoading } = useBoardRealtime(boardId)
-  const { tasks, loading: tasksLoading } = useTasksRealtime(boardId)
+  const { board, loading: boardLoading, error: boardError } = useBoardRealtime(boardId)
+  const { tasks, loading: tasksLoading, error: tasksError } = useTasksRealtime(boardId)
   const { members } = useBoardMembersRealtime(boardId)
   const { unreadCount } = useNotificationsRealtime(currentUserId)
 
@@ -56,11 +57,45 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
     setInviteError("")
     setIsInviting(true)
     try {
-      await addBoardMember({ boardId, email: inviteEmail, role: inviteRole })
+      // Look up user by email
+      let targetUser
+      try {
+        targetUser = await searchUserByEmail(inviteEmail)
+      } catch {
+        setInviteError("No user found with that email address.")
+        return
+      }
+
+      if (!targetUser?.userId) {
+        setInviteError("No user found with that email address.")
+        return
+      }
+
+      // Check if already a member
+      const alreadyMember = members.find((m) => m.userId === targetUser.userId)
+      if (alreadyMember) {
+        setInviteError("This user is already a member of the board.")
+        return
+      }
+
+      const senderName = user?.displayName || user?.email || "Someone"
+
+      // Send invite notification instead of immediately adding
+      await sendNotification({
+        recipientId: targetUser.userId,
+        senderId: currentUserId,
+        senderName,
+        boardId,
+        boardTitle: board?.title || "a board",
+        type: "board_invite",
+        inviteRole: inviteRole,
+        message: `${senderName} invited you to join "${board?.title || "a board"}" as ${inviteRole}`,
+      })
+
       setInviteEmail("")
       setInviteOpen(false)
     } catch (err: unknown) {
-      setInviteError(err instanceof Error ? err.message : "Failed to invite member")
+      setInviteError(err instanceof Error ? err.message : "Failed to send invite")
     } finally {
       setIsInviting(false)
     }
@@ -201,6 +236,12 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
             <UserMenu />
           </div>
         </header>
+
+        {(boardError || tasksError) && (
+          <div className="mx-8 mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+            {boardError || tasksError}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-20">

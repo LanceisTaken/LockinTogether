@@ -65,9 +65,14 @@ export default function SignUpPage() {
   }, [router])
 
   const handleGISLoad = () => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+    if (!clientId) {
+      console.error("Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID environment variable")
+      return
+    }
     if (window.google && googleButtonRef.current) {
       window.google.accounts.id.initialize({
-        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
+        client_id: clientId,
         callback: window.handleGoogleCredentialSignup,
       })
       window.google.accounts.id.renderButton(googleButtonRef.current, {
@@ -94,7 +99,11 @@ export default function SignUpPage() {
     setIsSigningUp(true)
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password)
-      await updateProfile(result.user, { displayName: displayName.trim() })
+      try {
+        await updateProfile(result.user, { displayName: displayName.trim() })
+      } catch {
+        console.warn("Account created but failed to set display name. You can update it later in settings.")
+      }
       router.replace("/")
     } catch (err: any) {
       const code = err?.code ?? ""
@@ -105,6 +114,7 @@ export default function SignUpPage() {
       } else if (code === "auth/weak-password") {
         setError("Password is too weak. Please choose a stronger one.")
       } else {
+        console.error("Unexpected auth error:", code, err)
         setError("Something went wrong. Please try again.")
       }
     } finally {

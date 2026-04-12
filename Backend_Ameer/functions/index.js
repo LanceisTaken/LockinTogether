@@ -48,6 +48,7 @@ const {
   moveTask,
   deleteTask,
   assignTask,
+  getUserStats,
 } = require("./handlers/tasks");
 exports.createTask = createTask;
 exports.getTasksByBoard = getTasksByBoard;
@@ -55,6 +56,7 @@ exports.updateTask = updateTask;
 exports.moveTask = moveTask;
 exports.deleteTask = deleteTask;
 exports.assignTask = assignTask;
+exports.getUserStats = getUserStats;
 
 // ── File Attachments (Phase 4) ─────────────────────────────
 const {

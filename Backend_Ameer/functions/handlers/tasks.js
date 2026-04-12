@@ -22,7 +22,7 @@ const createTask = onRequest({ region: REGION }, (req, res) => {
       }
 
       const decodedToken = await verifyAuth(req);
-      const { boardId, title, description, status, deadline, assignedTo, coEditors } = req.body;
+      const { boardId, title, description, status, deadline, assignedTo, coEditors, color } = req.body;
 
       requireFields(req.body, ["boardId", "title"]);
       validateString(title, "title", 200);
@@ -69,6 +69,7 @@ const createTask = onRequest({ region: REGION }, (req, res) => {
         title: title.trim(), description: description ? description.trim() : "",
         status: taskStatus, columnIndex: nextIndex,
         deadline: deadline ? new Date(deadline) : null,
+        color: color || "cyan",
         createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
       };
 
@@ -117,7 +118,7 @@ const updateTask = onRequest({ region: REGION }, (req, res) => {
       if (req.method !== "PATCH") return res.status(405).json({ error: "Method not allowed. Use PATCH." });
 
       const decodedToken = await verifyAuth(req);
-      const { taskId, boardId, title, description, deadline, assignedTo, coEditors } = req.body;
+      const { taskId, boardId, title, description, deadline, assignedTo, coEditors, color } = req.body;
 
       requireFields(req.body, ["taskId", "boardId"]);
       await checkMembership(decodedToken.uid, boardId);
@@ -149,6 +150,11 @@ const updateTask = onRequest({ region: REGION }, (req, res) => {
           if (editorDoc.exists) validCoEditors.push(editorId);
         }
         updates.coEditors = validCoEditors;
+      }
+
+      if (color !== undefined) {
+        const validColors = ["cyan", "amber", "emerald", "fuchsia", "blue", "rose"];
+        if (validColors.includes(color)) updates.color = color;
       }
 
       if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No valid fields to update." });
@@ -347,4 +353,142 @@ const assignTask = onRequest({ region: REGION }, (req, res) => {
   });
 });
 
-module.exports = { createTask, getTasksByBoard, updateTask, moveTask, deleteTask, assignTask };
+const getUserStats = onRequest({ region: REGION }, (req, res) => {
+  cors(req, res, async () => {
+    try {
+      if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed. Use GET." });
+
+      const decodedToken = await verifyAuth(req);
+      const uid = decodedToken.uid;
+
+      // Find all boards the user is a member of
+      const membershipSnapshot = await db.collection("boardMembers")
+        .where("userId", "==", uid).get();
+
+      if (membershipSnapshot.empty) {
+        return res.status(200).json({
+          totalCompleted: 0, completedOnTime: 0, completedLate: 0,
+          inProgress: 0, completionRate: 0, recentCompleted: [], boardBreakdown: [],
+        });
+      }
+
+      const boardIds = membershipSnapshot.docs.map((doc) => doc.data().boardId);
+
+      // Fetch all board documents to know their columns
+      const boardDocs = {};
+      for (const boardId of boardIds) {
+        const boardDoc = await db.collection("boards").doc(boardId).get();
+        if (boardDoc.exists) {
+          boardDocs[boardId] = boardDoc.data();
+        }
+      }
+
+      // Query tasks where user is assignedTo or createdBy across all boards
+      const [assignedSnapshot, createdSnapshot] = await Promise.all([
+        db.collection("tasks").where("assignedTo", "==", uid).get(),
+        db.collection("tasks").where("createdBy", "==", uid).get(),
+      ]);
+
+      // Merge and deduplicate tasks
+      const taskMap = new Map();
+      const addTasks = (snapshot) => {
+        snapshot.docs.forEach((doc) => {
+          if (!taskMap.has(doc.id) && boardDocs[doc.data().boardId]) {
+            taskMap.set(doc.id, { taskId: doc.id, ...doc.data() });
+          }
+        });
+      };
+      addTasks(assignedSnapshot);
+      addTasks(createdSnapshot);
+
+      const allTasks = Array.from(taskMap.values());
+
+      let totalCompleted = 0;
+      let completedOnTime = 0;
+      let completedLate = 0;
+      let inProgress = 0;
+      const completedTasks = [];
+      const boardStatsMap = {};
+
+      for (const task of allTasks) {
+        const board = boardDocs[task.boardId];
+        const columns = board.columns;
+        const doneStatus = columns[columns.length - 1];
+        const isCompleted = task.status === doneStatus;
+
+        // Initialize board breakdown entry
+        if (!boardStatsMap[task.boardId]) {
+          boardStatsMap[task.boardId] = {
+            boardId: task.boardId,
+            boardTitle: board.title || board.name || task.boardId,
+            total: 0, completed: 0, inProgress: 0,
+          };
+        }
+        boardStatsMap[task.boardId].total += 1;
+
+        if (isCompleted) {
+          totalCompleted += 1;
+          boardStatsMap[task.boardId].completed += 1;
+
+          const hasDeadline = task.deadline != null;
+          let onTime = true;
+
+          if (hasDeadline && task.updatedAt) {
+            const updatedAtMs = task.updatedAt.toMillis();
+            const deadlineMs = task.deadline.toMillis();
+            onTime = updatedAtMs <= deadlineMs;
+          }
+
+          if (onTime) {
+            completedOnTime += 1;
+          } else {
+            completedLate += 1;
+          }
+
+          completedTasks.push({
+            taskId: task.taskId,
+            title: task.title,
+            boardId: task.boardId,
+            boardTitle: board.title || board.name || task.boardId,
+            deadline: task.deadline ? task.deadline.toDate().toISOString() : null,
+            updatedAt: task.updatedAt ? task.updatedAt.toDate().toISOString() : null,
+            completedOnTime: onTime,
+          });
+        } else {
+          inProgress += 1;
+          boardStatsMap[task.boardId].inProgress += 1;
+        }
+      }
+
+      // Completion rate: percentage of completed tasks with deadlines that were on time
+      const completedWithDeadline = completedTasks.filter((t) => t.deadline != null).length;
+      const onTimeWithDeadline = completedTasks.filter((t) => t.deadline != null && t.completedOnTime).length;
+      const completionRate = completedWithDeadline > 0
+        ? Math.round((onTimeWithDeadline / completedWithDeadline) * 100)
+        : 100;
+
+      // Recent completed: last 10 sorted by updatedAt descending
+      const recentCompleted = completedTasks
+        .sort((a, b) => {
+          const aMs = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          const bMs = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          return bMs - aMs;
+        })
+        .slice(0, 10);
+
+      const boardBreakdown = Object.values(boardStatsMap);
+
+      logger.info("getUserStats", { userId: uid, totalCompleted, inProgress });
+
+      return res.status(200).json({
+        totalCompleted, completedOnTime, completedLate,
+        inProgress, completionRate, recentCompleted, boardBreakdown,
+      });
+    } catch (error) {
+      logger.error("getUserStats error", { error: error.message });
+      return res.status(error.code || 500).json({ error: error.message });
+    }
+  });
+});
+
+module.exports = { createTask, getTasksByBoard, updateTask, moveTask, deleteTask, assignTask, getUserStats };

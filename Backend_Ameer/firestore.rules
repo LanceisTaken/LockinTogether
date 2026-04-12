@@ -67,10 +67,17 @@ service cloud.firestore {
     }
 
     // ActivityLog collection
-    match /activityLogs/{logId} {
+    match /activityLog/{logId} {
       allow read: if isLoggedIn() && isBoardMember(resource.data.boardId);
       allow create: if isLoggedIn() && isBoardMember(request.resource.data.boardId);
       allow update, delete: if false; // Logs are immutable
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isLoggedIn() && resource.data.recipientId == request.auth.uid;
+      allow create: if isLoggedIn() && request.resource.data.senderId == request.auth.uid;
+      allow update: if isLoggedIn() && resource.data.recipientId == request.auth.uid;
     }
   }
 }

@@ -24,6 +24,7 @@ import type { TaskData, BoardMember } from "@/lib/api"
 export function useTasksRealtime(boardId: string | null) {
   const [tasks, setTasks] = useState<TaskData[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!boardId) {
@@ -33,6 +34,7 @@ export function useTasksRealtime(boardId: string | null) {
     }
 
     setLoading(true)
+    setError(null)
 
     const q = query(
       collection(db, "tasks"),
@@ -51,8 +53,9 @@ export function useTasksRealtime(boardId: string | null) {
         setTasks(result)
         setLoading(false)
       },
-      (error) => {
-        console.error("Tasks realtime error:", error)
+      (err) => {
+        console.error("Tasks realtime error:", err)
+        setError("Failed to load tasks. Please refresh the page.")
         setLoading(false)
       }
     )
@@ -60,7 +63,7 @@ export function useTasksRealtime(boardId: string | null) {
     return () => unsubscribe()
   }, [boardId])
 
-  return { tasks, loading }
+  return { tasks, loading, error }
 }
 
 /**
@@ -70,6 +73,7 @@ export function useTasksRealtime(boardId: string | null) {
 export function useBoardMembersRealtime(boardId: string | null) {
   const [members, setMembers] = useState<BoardMember[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!boardId) {
@@ -79,6 +83,7 @@ export function useBoardMembersRealtime(boardId: string | null) {
     }
 
     setLoading(true)
+    setError(null)
 
     const q = query(
       collection(db, "boardMembers"),
@@ -105,8 +110,8 @@ export function useBoardMembersRealtime(boardId: string | null) {
                   email = userData.email || ""
                   photoURL = userData.photoURL || null
                 }
-              } catch {
-                // Fallback silently
+              } catch (err) {
+                console.warn(`Failed to enrich member profile for userId=${data.userId}:`, err)
               }
             }
 
@@ -124,8 +129,9 @@ export function useBoardMembersRealtime(boardId: string | null) {
         setMembers(result)
         setLoading(false)
       },
-      (error) => {
-        console.error("Board members realtime error:", error)
+      (err) => {
+        console.error("Board members realtime error:", err)
+        setError("Failed to load members. Please refresh the page.")
         setLoading(false)
       }
     )
@@ -133,7 +139,7 @@ export function useBoardMembersRealtime(boardId: string | null) {
     return () => unsubscribe()
   }, [boardId])
 
-  return { members, loading }
+  return { members, loading, error }
 }
 
 /**
@@ -149,6 +155,7 @@ export function useBoardRealtime(boardId: string | null) {
     columns: string[]
   } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!boardId) {
@@ -158,6 +165,7 @@ export function useBoardRealtime(boardId: string | null) {
     }
 
     setLoading(true)
+    setError(null)
 
     const unsubscribe = onSnapshot(
       doc(db, "boards", boardId),
@@ -176,8 +184,9 @@ export function useBoardRealtime(boardId: string | null) {
         }
         setLoading(false)
       },
-      (error) => {
-        console.error("Board realtime error:", error)
+      (err) => {
+        console.error("Board realtime error:", err)
+        setError("Failed to load board. Please refresh the page.")
         setLoading(false)
       }
     )
@@ -185,7 +194,7 @@ export function useBoardRealtime(boardId: string | null) {
     return () => unsubscribe()
   }, [boardId])
 
-  return { board, loading }
+  return { board, loading, error }
 }
 
 /**
@@ -204,6 +213,7 @@ export function useActivityLogRealtime(boardId: string | null, limit = 20) {
     }[]
   >([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!boardId) {
@@ -213,6 +223,7 @@ export function useActivityLogRealtime(boardId: string | null, limit = 20) {
     }
 
     setLoading(true)
+    setError(null)
 
     const q = query(
       collection(db, "activityLog"),
@@ -237,8 +248,9 @@ export function useActivityLogRealtime(boardId: string | null, limit = 20) {
         setLogs(result)
         setLoading(false)
       },
-      (error) => {
-        console.error("Activity log realtime error:", error)
+      (err) => {
+        console.error("Activity log realtime error:", err)
+        setError("Failed to load activity log.")
         setLoading(false)
       }
     )
@@ -246,7 +258,7 @@ export function useActivityLogRealtime(boardId: string | null, limit = 20) {
     return () => unsubscribe()
   }, [boardId, limit])
 
-  return { logs, loading }
+  return { logs, loading, error }
 }
 
 // ── Notifications ─────────────────────────────────────────────
@@ -257,10 +269,12 @@ export interface Notification {
   senderId: string
   senderName: string
   boardId: string
-  taskId: string
-  taskTitle: string
-  type: "state_change_request"
-  requestedStatus: string
+  boardTitle?: string
+  taskId?: string
+  taskTitle?: string
+  type: "state_change_request" | "board_invite"
+  requestedStatus?: string
+  inviteRole?: string
   message: string
   read: boolean
   createdAt: unknown
@@ -274,10 +288,12 @@ export async function sendNotification(data: {
   senderId: string
   senderName: string
   boardId: string
-  taskId: string
-  taskTitle: string
-  type: "state_change_request"
-  requestedStatus: string
+  boardTitle?: string
+  taskId?: string
+  taskTitle?: string
+  type: "state_change_request" | "board_invite"
+  requestedStatus?: string
+  inviteRole?: string
   message: string
 }) {
   await addDoc(collection(db, "notifications"), {
@@ -300,6 +316,7 @@ export async function markNotificationRead(notificationId: string) {
 export function useNotificationsRealtime(userId: string | null) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!userId) {
@@ -309,6 +326,7 @@ export function useNotificationsRealtime(userId: string | null) {
     }
 
     setLoading(true)
+    setError(null)
 
     const q = query(
       collection(db, "notifications"),
@@ -326,8 +344,9 @@ export function useNotificationsRealtime(userId: string | null) {
         setNotifications(result)
         setLoading(false)
       },
-      (error) => {
-        console.error("Notifications realtime error:", error)
+      (err) => {
+        console.error("Notifications realtime error:", err)
+        setError("Failed to load notifications.")
         setLoading(false)
       }
     )
@@ -337,5 +356,5 @@ export function useNotificationsRealtime(userId: string | null) {
 
   const unreadCount = notifications.filter((n) => !n.read).length
 
-  return { notifications, unreadCount, loading }
+  return { notifications, unreadCount, loading, error }
 }

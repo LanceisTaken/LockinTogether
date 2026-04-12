@@ -15,6 +15,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog"
 import { PlusCircle } from "lucide-react"
+import { cn } from "@/lib/utils"
 import {
   createTask,
   updateTask,
@@ -23,6 +24,7 @@ import {
   type TaskData,
   type BoardMember,
 } from "@/lib/api"
+import { TASK_COLORS, TASK_COLOR_KEYS } from "./task-card"
 
 export interface KanbanBoardProps {
   boardId: string
@@ -44,8 +46,10 @@ export function KanbanBoard({ boardId, columns, tasks, members, currentUserId }:
   const [newDeadline, setNewDeadline] = useState("")
   const [newAssignee, setNewAssignee] = useState("")
   const [newCoEditors, setNewCoEditors] = useState<string[]>([])
+  const [newColor, setNewColor] = useState("cyan")
   const [isCreating, setIsCreating] = useState(false)
   const [createError, setCreateError] = useState("")
+  const [boardError, setBoardError] = useState("")
 
   const tasksByColumn = (columnName: string) =>
     tasks
@@ -70,16 +74,18 @@ export function KanbanBoard({ boardId, columns, tasks, members, currentUserId }:
         boardId,
         title: newTitle,
         description: newDescription || undefined,
+        status: columns[0], // Always default to first column (e.g. "To-Do")
         deadline: newDeadline || undefined,
         assignedTo: newAssignee || undefined,
         coEditors: newCoEditors.length > 0 ? newCoEditors : undefined,
-        // No status — backend defaults to first column (To-Do)
+        color: newColor,
       })
       setNewTitle("")
       setNewDescription("")
       setNewDeadline("")
       setNewAssignee("")
       setNewCoEditors([])
+      setNewColor("cyan")
       setCreateOpen(false)
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create task")
@@ -97,20 +103,23 @@ export function KanbanBoard({ boardId, columns, tasks, members, currentUserId }:
       description?: string
       deadline?: string | null
       coEditors?: string[]
+      color?: string
     }
   ) => {
+    setBoardError("")
     try {
       await updateTask({ taskId, boardId, ...updates })
     } catch (err) {
-      console.error("Failed to update task:", err)
+      setBoardError(err instanceof Error ? err.message : "Failed to update task")
     }
   }
 
   const handleTaskDelete = async (taskId: string) => {
+    setBoardError("")
     try {
       await deleteTask(taskId, boardId)
     } catch (err) {
-      console.error("Failed to delete task:", err)
+      setBoardError(err instanceof Error ? err.message : "Failed to delete task")
     }
   }
 
@@ -148,7 +157,7 @@ export function KanbanBoard({ boardId, columns, tasks, members, currentUserId }:
           newColumnIndex,
         })
       } catch (err) {
-        console.error("Failed to move task:", err)
+        setBoardError(err instanceof Error ? err.message : "Failed to move task")
       }
     }
 
@@ -167,6 +176,12 @@ export function KanbanBoard({ boardId, columns, tasks, members, currentUserId }:
 
   return (
     <>
+      {boardError && (
+        <div className="mx-6 mt-4 flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+          <span>{boardError}</span>
+          <button onClick={() => setBoardError("")} className="ml-4 font-medium hover:text-red-800">Dismiss</button>
+        </div>
+      )}
       <div className="flex gap-4 p-6 overflow-x-auto min-h-[calc(100vh-80px)]">
         {columns.map((columnName) => {
           const columnTasks = tasksByColumn(columnName)
@@ -286,6 +301,27 @@ export function KanbanBoard({ boardId, columns, tasks, members, currentUserId }:
                 {members.filter((m) => m.userId !== currentUserId).length === 0 && (
                   <p className="text-xs text-muted-foreground">No other members to add.</p>
                 )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Color</label>
+              <div className="flex gap-2">
+                {TASK_COLOR_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setNewColor(key)}
+                    className={cn(
+                      "w-7 h-7 rounded-full transition-all",
+                      TASK_COLORS[key].swatch,
+                      newColor === key
+                        ? "ring-2 ring-offset-2 ring-slate-900 scale-110"
+                        : "hover:scale-110"
+                    )}
+                    title={TASK_COLORS[key].label}
+                  />
+                ))}
               </div>
             </div>
 

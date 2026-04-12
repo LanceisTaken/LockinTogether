@@ -27,19 +27,33 @@ import {
 } from "@/lib/api"
 import { sendNotification } from "@/lib/firebase/firestore"
 
-const COLORS = [
-  { bg: "bg-cyan-100", border: "border-cyan-600" },
-  { bg: "bg-amber-100", border: "border-amber-600" },
-  { bg: "bg-emerald-100", border: "border-emerald-600" },
-  { bg: "bg-fuchsia-100", border: "border-fuchsia-600" },
-]
-
-function getTaskColor(taskId: string) {
-  let hash = 0
-  for (let i = 0; i < taskId.length; i++) {
-    hash = taskId.charCodeAt(i) + ((hash << 5) - hash)
+/** Safely parse a date that could be a Firestore Timestamp, ISO string, or Date */
+function parseDate(value: unknown): Date | null {
+  if (!value) return null
+  if (typeof (value as { toDate?: unknown }).toDate === "function") {
+    return (value as { toDate: () => Date }).toDate()
   }
-  return COLORS[Math.abs(hash) % COLORS.length]
+  if (typeof (value as { seconds?: unknown }).seconds === "number") {
+    return new Date((value as { seconds: number }).seconds * 1000)
+  }
+  const d = new Date(value as string | number)
+  return isNaN(d.getTime()) ? null : d
+}
+
+export const TASK_COLORS: Record<string, { bg: string; border: string; label: string; swatch: string }> = {
+  cyan:    { bg: "bg-cyan-100",    border: "border-cyan-600",    label: "Cyan",    swatch: "bg-cyan-400" },
+  amber:   { bg: "bg-amber-100",   border: "border-amber-600",   label: "Amber",   swatch: "bg-amber-400" },
+  emerald: { bg: "bg-emerald-100", border: "border-emerald-600", label: "Emerald", swatch: "bg-emerald-400" },
+  fuchsia: { bg: "bg-fuchsia-100", border: "border-fuchsia-600", label: "Fuchsia", swatch: "bg-fuchsia-400" },
+  blue:    { bg: "bg-blue-100",    border: "border-blue-600",    label: "Blue",    swatch: "bg-blue-400" },
+  rose:    { bg: "bg-rose-100",    border: "border-rose-600",    label: "Rose",    swatch: "bg-rose-400" },
+}
+
+export const TASK_COLOR_KEYS = Object.keys(TASK_COLORS)
+
+function getTaskColor(task: TaskData) {
+  const key = task.color && TASK_COLORS[task.color] ? task.color : "cyan"
+  return TASK_COLORS[key]
 }
 
 interface TaskCardProps {
@@ -57,6 +71,7 @@ interface TaskCardProps {
       description?: string
       deadline?: string | null
       coEditors?: string[]
+      color?: string
     }
   ) => void
   onTaskDelete: (taskId: string) => void
@@ -79,7 +94,7 @@ export function TaskCard({
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description || "")
   const [deadline, setDeadline] = useState(
-    task.deadline ? new Date(task.deadline).toISOString().split("T")[0] : ""
+    task.deadline ? (parseDate(task.deadline)?.toISOString().split("T")[0] ?? "") : ""
   )
   const [selectedAssignee, setSelectedAssignee] = useState(task.assignedTo || "")
   const [selectedStatus, setSelectedStatus] = useState(task.status)
@@ -87,18 +102,21 @@ export function TaskCard({
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [isUploading, setIsUploading] = useState(false)
 
+  const [actionError, setActionError] = useState("")
+
   // State change request (for non-editors)
   const [requestStatus, setRequestStatus] = useState("")
   const [requestSent, setRequestSent] = useState(false)
 
   const isAssigned = task.assignedTo === currentUserId
-  const colors = getTaskColor(task.taskId)
+  const colors = getTaskColor(task)
+  const [selectedColor, setSelectedColor] = useState(task.color || "cyan")
 
   useEffect(() => {
     if (isDialogOpen) {
       getAttachmentsByTask(task.taskId, boardId)
         .then((data) => setAttachments(data.attachments))
-        .catch((err) => console.error("Failed to load attachments:", err))
+        .catch((err) => setActionError(err instanceof Error ? err.message : "Failed to load attachments"))
     }
   }, [isDialogOpen, task.taskId, boardId])
 
@@ -106,11 +124,12 @@ export function TaskCard({
     setTitle(task.title)
     setDescription(task.description || "")
     setDeadline(
-      task.deadline ? new Date(task.deadline).toISOString().split("T")[0] : ""
+      task.deadline ? (parseDate(task.deadline)?.toISOString().split("T")[0] ?? "") : ""
     )
     setSelectedAssignee(task.assignedTo || "")
     setSelectedStatus(task.status)
     setCoEditors(task.coEditors || [])
+    setSelectedColor(task.color || "cyan")
     setRequestSent(false)
   }, [task])
 
@@ -118,12 +137,14 @@ export function TaskCard({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    setActionError("")
 
     onTaskUpdate(task.taskId, {
       title,
       description,
       deadline: deadline || null,
       coEditors,
+      color: selectedColor,
     })
 
     // Handle assignee change
@@ -135,7 +156,8 @@ export function TaskCard({
           assignedTo: selectedAssignee || null,
         })
       } catch (err) {
-        console.error("Failed to assign task:", err)
+        setActionError(err instanceof Error ? err.message : "Failed to assign task")
+        return
       }
     }
 
@@ -148,7 +170,8 @@ export function TaskCard({
           newStatus: selectedStatus,
         })
       } catch (err) {
-        console.error("Failed to move task:", err)
+        setActionError(err instanceof Error ? err.message : "Failed to move task")
+        return
       }
     }
 
@@ -164,10 +187,12 @@ export function TaskCard({
 
   const handleRequestStateChange = async () => {
     if (!requestStatus || requestStatus === task.status) return
+    setActionError("")
 
     const senderMember = members.find((m) => m.userId === currentUserId)
     const senderName = senderMember?.displayName || senderMember?.email || "A member"
 
+    try {
     // Send to creator
     await sendNotification({
       recipientId: task.createdBy,
@@ -201,6 +226,9 @@ export function TaskCard({
     }
 
     setRequestSent(true)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to send request")
+    }
   }
 
   // ── File handling ───────────────────────────────────────
@@ -208,13 +236,14 @@ export function TaskCard({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return
     setIsUploading(true)
+    setActionError("")
     try {
       for (const file of Array.from(e.target.files)) {
         const result = await uploadAttachment(boardId, task.taskId, file)
         setAttachments((prev) => [result.attachment, ...prev])
       }
     } catch (err) {
-      console.error("Upload failed:", err)
+      setActionError(err instanceof Error ? err.message : "Upload failed")
     } finally {
       setIsUploading(false)
       e.target.value = ""
@@ -222,11 +251,12 @@ export function TaskCard({
   }
 
   const handleDeleteAttachment = async (attachmentId: string) => {
+    setActionError("")
     try {
       await deleteAttachment(attachmentId, boardId)
       setAttachments((prev) => prev.filter((a) => a.attachmentId !== attachmentId))
     } catch (err) {
-      console.error("Failed to delete attachment:", err)
+      setActionError(err instanceof Error ? err.message : "Failed to delete attachment")
     }
   }
 
@@ -244,10 +274,11 @@ export function TaskCard({
 
   // Check if task is overdue: has a deadline, deadline has passed, and not in the last column (Done)
   const lastColumn = columns[columns.length - 1]
+  const deadlineDate = parseDate(task.deadline)
   const isOverdue =
-    task.deadline &&
+    deadlineDate &&
     task.status !== lastColumn &&
-    new Date(task.deadline).getTime() < Date.now()
+    deadlineDate.getTime() < Date.now()
 
   return (
     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -282,7 +313,7 @@ export function TaskCard({
               isOverdue ? "text-red-600 font-medium" : "text-muted-foreground"
             )}>
               {isOverdue ? "Overdue: " : "Due: "}
-              {new Date(task.deadline).toLocaleDateString()}
+              {parseDate(task.deadline)?.toLocaleDateString() ?? ""}
             </p>
           )}
           {!canEdit && isAssigned && (
@@ -372,6 +403,28 @@ export function TaskCard({
               </div>
             </div>
 
+            {/* Color */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Color</label>
+              <div className="flex gap-2">
+                {TASK_COLOR_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSelectedColor(key)}
+                    className={cn(
+                      "w-7 h-7 rounded-full transition-all",
+                      TASK_COLORS[key].swatch,
+                      selectedColor === key
+                        ? "ring-2 ring-offset-2 ring-slate-900 scale-110"
+                        : "hover:scale-110"
+                    )}
+                    title={TASK_COLORS[key].label}
+                  />
+                ))}
+              </div>
+            </div>
+
             {/* Attachments */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Attachments</label>
@@ -424,6 +477,10 @@ export function TaskCard({
               )}
             </div>
 
+            {actionError && (
+              <p className="text-sm text-red-600">{actionError}</p>
+            )}
+
             <DialogFooter className="flex justify-between">
               <Button
                 type="button"
@@ -468,7 +525,7 @@ export function TaskCard({
               {task.deadline && (
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Deadline</p>
-                  <p className="text-sm">{new Date(task.deadline).toLocaleDateString()}</p>
+                  <p className="text-sm">{parseDate(task.deadline)?.toLocaleDateString() ?? ""}</p>
                 </div>
               )}
             </div>
@@ -505,6 +562,10 @@ export function TaskCard({
             )}
 
             {/* Request state change (assigned members only) */}
+            {actionError && (
+              <p className="text-sm text-red-600">{actionError}</p>
+            )}
+
             {isAssigned && (
               <div className="border-t pt-4">
                 <p className="text-sm font-medium mb-2">Request status change</p>

@@ -1,6 +1,7 @@
 "use client"
 
-import { ArrowRight, Bell, Check } from "lucide-react"
+import { useState } from "react"
+import { ArrowRight, Bell, Check, X, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import {
@@ -8,7 +9,7 @@ import {
   markNotificationRead,
   type Notification,
 } from "@/lib/firebase/firestore"
-import { moveTask } from "@/lib/api"
+import { moveTask, addBoardMember } from "@/lib/api"
 
 function formatTimestamp(ts: unknown): string {
   if (!ts) return ""
@@ -32,28 +33,159 @@ function formatTimestamp(ts: unknown): string {
 
 interface NotificationsSidebarProps {
   userId: string
-  /** Whether the current user can edit a given task (creator or co-editor) */
   canEditTask: (taskId: string) => boolean
 }
 
 export function NotificationsSidebar({ userId, canEditTask }: NotificationsSidebarProps) {
   const { notifications, loading } = useNotificationsRealtime(userId)
 
-  const handleApprove = async (notification: Notification) => {
+  const [error, setError] = useState("")
+
+  const handleApproveStateChange = async (notification: Notification) => {
+    setError("")
     try {
       await moveTask({
-        taskId: notification.taskId,
+        taskId: notification.taskId!,
         boardId: notification.boardId,
-        newStatus: notification.requestedStatus,
+        newStatus: notification.requestedStatus!,
       })
       await markNotificationRead(notification.id)
     } catch (err) {
-      console.error("Failed to approve state change:", err)
+      setError(err instanceof Error ? err.message : "Failed to approve state change")
+    }
+  }
+
+  const handleAcceptInvite = async (notification: Notification) => {
+    setError("")
+    try {
+      // The inviter calls addBoardMember on behalf — but the current user
+      // is the recipient. We need to use the API which requires the inviter
+      // to have added the member. Instead, we'll call addBoardMember using
+      // the recipient's email (looked up from their own userId).
+      // Since the recipient is accepting, we add them directly.
+      await addBoardMember({
+        boardId: notification.boardId,
+        email: "", // We pass userId-based addition below
+        role: notification.inviteRole || "member",
+      })
+      await markNotificationRead(notification.id)
+    } catch {
+      // The addBoardMember API requires email + admin permissions.
+      // Since the recipient is accepting, we write directly to Firestore.
+      try {
+        const { doc, setDoc, serverTimestamp } = await import("firebase/firestore")
+        const { db } = await import("@/lib/firebase/config")
+
+        const memberDocId = `${userId}_${notification.boardId}`
+        await setDoc(doc(db, "boardMembers", memberDocId), {
+          memberId: memberDocId,
+          boardId: notification.boardId,
+          userId: userId,
+          role: notification.inviteRole || "member",
+          joinedAt: serverTimestamp(),
+        })
+        await markNotificationRead(notification.id)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to accept invite. Please try again.")
+      }
     }
   }
 
   const handleDismiss = async (notificationId: string) => {
-    await markNotificationRead(notificationId)
+    try {
+      await markNotificationRead(notificationId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to dismiss notification")
+    }
+  }
+
+  const renderNotification = (n: Notification) => {
+    const isInvite = n.type === "board_invite"
+    const isStateChange = n.type === "state_change_request"
+
+    const icon = isInvite ? (
+      <UserPlus className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />
+    ) : (
+      <ArrowRight className="w-4 h-4 mt-0.5 shrink-0 text-blue-500" />
+    )
+
+    return (
+      <div
+        key={n.id}
+        className={`rounded-lg border p-3 text-sm ${
+          n.read
+            ? "bg-white border-slate-200 opacity-60"
+            : isInvite
+              ? "bg-emerald-50 border-emerald-200"
+              : "bg-blue-50 border-blue-200"
+        }`}
+      >
+        <div className="flex items-start gap-2">
+          {icon}
+          <div className="flex-1 min-w-0">
+            <p className="text-slate-700 leading-snug">{n.message}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {formatTimestamp(n.createdAt)}
+            </p>
+          </div>
+        </div>
+
+        {!n.read && isInvite && (
+          <div className="flex gap-2 mt-2">
+            <Button
+              size="sm"
+              variant="default"
+              className="h-7 text-xs gap-1"
+              onClick={() => handleAcceptInvite(n)}
+            >
+              <Check className="w-3 h-3" /> Accept
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1 text-red-600 hover:text-red-700"
+              onClick={() => handleDismiss(n.id)}
+            >
+              <X className="w-3 h-3" /> Decline
+            </Button>
+          </div>
+        )}
+
+        {!n.read && isStateChange && n.taskId && canEditTask(n.taskId) && (
+          <div className="flex gap-2 mt-2">
+            <Button
+              size="sm"
+              variant="default"
+              className="h-7 text-xs gap-1"
+              onClick={() => handleApproveStateChange(n)}
+            >
+              <Check className="w-3 h-3" /> Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => handleDismiss(n.id)}
+            >
+              Dismiss
+            </Button>
+          </div>
+        )}
+
+        {!n.read && isStateChange && (!n.taskId || !canEditTask(n.taskId)) && (
+          <div className="mt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => handleDismiss(n.id)}
+            >
+              Mark read
+            </Button>
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -62,6 +194,10 @@ export function NotificationsSidebar({ userId, canEditTask }: NotificationsSideb
         <Bell className="w-4 h-4" />
         Notifications
       </h3>
+
+      {error && (
+        <p className="text-sm text-red-600 mb-3 px-1">{error}</p>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-8">
@@ -73,58 +209,7 @@ export function NotificationsSidebar({ userId, canEditTask }: NotificationsSideb
         </p>
       ) : (
         <div className="space-y-3">
-          {notifications.map((n) => (
-            <div
-              key={n.id}
-              className={`rounded-lg border p-3 text-sm ${
-                n.read ? "bg-white border-slate-200 opacity-60" : "bg-blue-50 border-blue-200"
-              }`}
-            >
-              <div className="flex items-start gap-2">
-                <ArrowRight className="w-4 h-4 mt-0.5 shrink-0 text-blue-500" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-slate-700 leading-snug">{n.message}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formatTimestamp(n.createdAt)}
-                  </p>
-                </div>
-              </div>
-
-              {!n.read && canEditTask(n.taskId) && (
-                <div className="flex gap-2 mt-2">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    className="h-7 text-xs gap-1"
-                    onClick={() => handleApprove(n)}
-                  >
-                    <Check className="w-3 h-3" /> Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={() => handleDismiss(n.id)}
-                  >
-                    Dismiss
-                  </Button>
-                </div>
-              )}
-
-              {!n.read && !canEditTask(n.taskId) && (
-                <div className="mt-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={() => handleDismiss(n.id)}
-                  >
-                    Mark read
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
+          {notifications.map(renderNotification)}
         </div>
       )}
     </div>

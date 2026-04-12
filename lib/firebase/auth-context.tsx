@@ -11,7 +11,8 @@ import {
   signOut as firebaseSignOut,
   type User,
 } from "firebase/auth"
-import { auth } from "./config"
+import { auth, db } from "./config"
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"
 import { getUserProfile } from "@/lib/api"
 
 export interface UserProfile {
@@ -41,6 +42,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
+  /**
+   * Ensure user profile exists in Firestore.
+   * The onUserCreate trigger should create it, but if it didn't
+   * (common with Google OAuth in emulator), create it client-side.
+   */
+  const ensureProfile = async (firebaseUser: User) => {
+    const userRef = doc(db, "users", firebaseUser.uid)
+    const userDoc = await getDoc(userRef)
+
+    if (!userDoc.exists()) {
+      await setDoc(userRef, {
+        userId: firebaseUser.uid,
+        email: firebaseUser.email || "",
+        displayName:
+          firebaseUser.displayName ||
+          firebaseUser.email?.split("@")[0] ||
+          "New User",
+        photoURL: firebaseUser.photoURL || null,
+        role: "user",
+        createdAt: serverTimestamp(),
+      })
+    }
+  }
+
   const fetchProfile = async () => {
     try {
       const data = await getUserProfile()
@@ -61,8 +86,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser)
       if (firebaseUser) {
-        // Small delay to allow onUserCreate trigger to provision the profile
-        await new Promise((r) => setTimeout(r, 500))
+        try {
+          // Ensure profile exists (handles Google OAuth in emulator)
+          await ensureProfile(firebaseUser)
+        } catch (err) {
+          console.error("Failed to ensure user profile in Firestore:", err)
+        }
         await fetchProfile()
       } else {
         setProfile(null)

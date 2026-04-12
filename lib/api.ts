@@ -8,11 +8,15 @@ const API_BASE =
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const user = auth.currentUser
-  if (!user) throw new Error("Not authenticated")
-  const token = await user.getIdToken()
-  return {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
+  if (!user) throw new Error("Session expired. Please sign in again.")
+  try {
+    const token = await user.getIdToken()
+    return {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    }
+  } catch {
+    throw new Error("Session expired. Please sign in again.")
   }
 }
 
@@ -21,12 +25,25 @@ async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const headers = await getAuthHeaders()
-  const res = await fetch(`${API_BASE}/${endpoint}`, {
-    ...options,
-    headers: { ...headers, ...(options.headers as Record<string, string>) },
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}/${endpoint}`, {
+      ...options,
+      headers: { ...headers, ...(options.headers as Record<string, string>) },
+    })
+  } catch {
+    throw new Error("Network error. Please check your connection and try again.")
+  }
+
+  let data: Record<string, unknown>
+  try {
+    data = await res.json()
+  } catch {
+    throw new Error(`Server returned an invalid response (${res.status})`)
+  }
+
+  if (!res.ok) throw new Error((data.error as string) || `Request failed (${res.status})`)
   return data as T
 }
 
@@ -42,6 +59,34 @@ export function getUserProfile(uid?: string) {
     role: string
     createdAt: unknown
   }>(`getUserProfile${query}`, { method: "GET" })
+}
+
+export interface UserStats {
+  totalCompleted: number
+  completedOnTime: number
+  completedLate: number
+  inProgress: number
+  completionRate: number
+  recentCompleted: {
+    taskId: string
+    title: string
+    boardId: string
+    boardTitle: string
+    deadline: string | null
+    updatedAt: string | null
+    completedOnTime: boolean
+  }[]
+  boardBreakdown: {
+    boardId: string
+    boardTitle: string
+    total: number
+    completed: number
+    inProgress: number
+  }[]
+}
+
+export function getUserStats() {
+  return apiRequest<UserStats>("getUserStats", { method: "GET" })
 }
 
 export function updateUserProfile(updates: {
@@ -169,6 +214,7 @@ export interface TaskData {
   status: string
   columnIndex: number
   deadline: string | null
+  color?: string
   createdAt: unknown
   updatedAt: unknown
 }
@@ -181,6 +227,7 @@ export function createTask(data: {
   deadline?: string
   assignedTo?: string
   coEditors?: string[]
+  color?: string
 }) {
   return apiRequest<{ message: string; task: TaskData }>("createTask", {
     method: "POST",
@@ -203,6 +250,7 @@ export function updateTask(data: {
   deadline?: string | null
   assignedTo?: string | null
   coEditors?: string[]
+  color?: string
 }) {
   return apiRequest<{ message: string }>("updateTask", {
     method: "PATCH",
@@ -261,22 +309,40 @@ export async function uploadAttachment(
   file: File
 ): Promise<{ message: string; attachment: Attachment }> {
   const user = auth.currentUser
-  if (!user) throw new Error("Not authenticated")
-  const token = await user.getIdToken()
+  if (!user) throw new Error("Session expired. Please sign in again.")
+
+  let token: string
+  try {
+    token = await user.getIdToken()
+  } catch {
+    throw new Error("Session expired. Please sign in again.")
+  }
 
   const formData = new FormData()
   formData.append("boardId", boardId)
   formData.append("taskId", taskId)
   formData.append("file", file)
 
-  const res = await fetch(`${API_BASE}/uploadAttachment`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || "Upload failed")
-  return data
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}/uploadAttachment`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+  } catch {
+    throw new Error("Network error. Please check your connection and try again.")
+  }
+
+  let data: Record<string, unknown>
+  try {
+    data = await res.json()
+  } catch {
+    throw new Error(`Server returned an invalid response (${res.status})`)
+  }
+
+  if (!res.ok) throw new Error((data.error as string) || "Upload failed")
+  return data as { message: string; attachment: Attachment }
 }
 
 export function getAttachmentsByTask(taskId: string, boardId: string) {
