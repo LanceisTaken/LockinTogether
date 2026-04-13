@@ -6,16 +6,21 @@ const { verifyAuth } = require("../middleware/auth");
 const { checkMembership } = require("./boards");
 const { createLog } = require("./activityLog");
 const { requireFields, validateFile } = require("../utils/validators");
+const { startTimer, logRequest, logSuccess, logError, logWarn } = require("../utils/monitoring");
 const Busboy = require("busboy");
 
 const REGION = "asia-southeast1";
+
+const UPLOAD_OPTIONS = { region: REGION, maxInstances: 3, memory: "512MiB", timeoutSeconds: 120, concurrency: 10 };
+const ATTACH_OPTIONS = { region: REGION, maxInstances: 3, concurrency: 40 };
 
 // ============================================================
 // Phase 4: File Attachment System — UC-07
 // ============================================================
 
-const uploadAttachment = onRequest({ region: REGION }, (req, res) => {
+const uploadAttachment = onRequest(UPLOAD_OPTIONS, (req, res) => {
   cors(req, res, async () => {
+    const t = startTimer();
     try {
       if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed. Use POST." });
 
@@ -78,17 +83,17 @@ const uploadAttachment = onRequest({ region: REGION }, (req, res) => {
       await createLog(boardId, decodedToken.uid, "file_uploaded",
         `File "${fileData.fileName}" attached to task "${taskDoc.data().title}".`, taskId);
 
-      logger.info("File uploaded", { boardId, taskId, fileName: fileData.fileName, userId: decodedToken.uid });
+      logSuccess("uploadAttachment", t, { boardId, taskId, fileName: fileData.fileName, fileSize: fileData.fileSize, userId: decodedToken.uid });
 
       return res.status(201).json({ message: "File uploaded successfully.", attachment: { attachmentId: attachmentRef.id, ...attachmentData } });
     } catch (error) {
-      logger.error("uploadAttachment error", { error: error.message });
+      logError("uploadAttachment", error, { boardId: fields?.boardId, taskId: fields?.taskId });
       return res.status(error.code || 500).json({ error: error.message });
     }
   });
 });
 
-const getAttachmentsByTask = onRequest({ region: REGION }, (req, res) => {
+const getAttachmentsByTask = onRequest(ATTACH_OPTIONS, (req, res) => {
   cors(req, res, async () => {
     try {
       if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed. Use GET." });
@@ -111,7 +116,7 @@ const getAttachmentsByTask = onRequest({ region: REGION }, (req, res) => {
   });
 });
 
-const deleteAttachment = onRequest({ region: REGION }, (req, res) => {
+const deleteAttachment = onRequest(ATTACH_OPTIONS, (req, res) => {
   cors(req, res, async () => {
     try {
       if (req.method !== "DELETE") return res.status(405).json({ error: "Method not allowed. Use DELETE." });
@@ -135,7 +140,7 @@ const deleteAttachment = onRequest({ region: REGION }, (req, res) => {
         const bucket = storage.bucket();
         await bucket.file(attachmentData.storagePath).delete();
       } catch (storageError) {
-        logger.warn("Storage delete warning", { boardId, error: storageError.message });
+        logWarn("deleteAttachment", "Storage delete failed", { boardId, error: storageError.message });
       }
 
       await db.collection("attachments").doc(attachmentId).delete();
@@ -145,7 +150,7 @@ const deleteAttachment = onRequest({ region: REGION }, (req, res) => {
 
       return res.status(200).json({ message: "Attachment deleted successfully." });
     } catch (error) {
-      logger.error("deleteAttachment error", { error: error.message });
+      logError("deleteAttachment", error, { boardId: req.body?.boardId });
       return res.status(error.code || 500).json({ error: error.message });
     }
   });

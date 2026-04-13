@@ -6,16 +6,21 @@ const { verifyAuth } = require("../middleware/auth");
 const { createLog } = require("./activityLog");
 const { checkMembership } = require("./boards");
 const { requireFields, validateString } = require("../utils/validators");
+const { startTimer, logRequest, logSuccess, logError, logWarn } = require("../utils/monitoring");
 
 const REGION = "asia-southeast1";
+
+const TASK_OPTIONS = { region: REGION, maxInstances: 5, concurrency: 40 };
+const MOVE_OPTIONS  = { region: REGION, maxInstances: 5, concurrency: 40 };
 
 // ============================================================
 // Phase 3: Task Management (Core Feature)
 // UC-03, UC-04, UC-05, UC-06, UC-10
 // ============================================================
 
-const createTask = onRequest({ region: REGION }, (req, res) => {
+const createTask = onRequest(TASK_OPTIONS, (req, res) => {
   cors(req, res, async () => {
+    const t = startTimer();
     try {
       if (req.method !== "POST") {
         return res.status(405).json({ error: "Method not allowed. Use POST." });
@@ -23,6 +28,7 @@ const createTask = onRequest({ region: REGION }, (req, res) => {
 
       const decodedToken = await verifyAuth(req);
       const { boardId, title, description, status, deadline, assignedTo, coEditors, color } = req.body;
+      logRequest("createTask", decodedToken.uid, { boardId });
 
       requireFields(req.body, ["boardId", "title"]);
       validateString(title, "title", 200);
@@ -78,11 +84,11 @@ const createTask = onRequest({ region: REGION }, (req, res) => {
       await createLog(boardId, decodedToken.uid, "task_created",
         `Task "${title.trim()}" was created in "${status}".`, taskRef.id);
 
-      logger.info("Task created", { boardId, taskId: taskRef.id, userId: decodedToken.uid, status });
+      logSuccess("createTask", t, { boardId, taskId: taskRef.id, userId: decodedToken.uid, status });
 
       return res.status(201).json({ message: "Task created successfully.", task: { taskId: taskRef.id, ...taskData } });
     } catch (error) {
-      logger.error("createTask error", { error: error.message });
+      logError("createTask", error, { boardId: req.body?.boardId });
       return res.status(error.code || 500).json({ error: error.message });
     }
   });
@@ -112,13 +118,15 @@ const getTasksByBoard = onRequest({ region: REGION }, (req, res) => {
   });
 });
 
-const updateTask = onRequest({ region: REGION }, (req, res) => {
+const updateTask = onRequest(TASK_OPTIONS, (req, res) => {
   cors(req, res, async () => {
+    const t = startTimer();
     try {
       if (req.method !== "PATCH") return res.status(405).json({ error: "Method not allowed. Use PATCH." });
 
       const decodedToken = await verifyAuth(req);
       const { taskId, boardId, title, description, deadline, assignedTo, coEditors, color } = req.body;
+      logRequest("updateTask", decodedToken.uid, { boardId, taskId });
 
       requireFields(req.body, ["taskId", "boardId"]);
       await checkMembership(decodedToken.uid, boardId);
@@ -163,23 +171,25 @@ const updateTask = onRequest({ region: REGION }, (req, res) => {
       await db.collection("tasks").doc(taskId).update(updates);
       await createLog(boardId, decodedToken.uid, "task_edited", `Task "${taskDoc.data().title}" was updated.`, taskId);
 
-      logger.info("Task updated", { boardId, taskId, userId: decodedToken.uid });
+      logSuccess("updateTask", t, { boardId, taskId, userId: decodedToken.uid });
 
       return res.status(200).json({ message: "Task updated successfully." });
     } catch (error) {
-      logger.error("updateTask error", { error: error.message });
+      logError("updateTask", error, { boardId: req.body?.boardId, taskId: req.body?.taskId });
       return res.status(error.code || 500).json({ error: error.message });
     }
   });
 });
 
-const moveTask = onRequest({ region: REGION }, (req, res) => {
+const moveTask = onRequest(MOVE_OPTIONS, (req, res) => {
   cors(req, res, async () => {
+    const t = startTimer();
     try {
       if (req.method !== "PATCH") return res.status(405).json({ error: "Method not allowed. Use PATCH." });
 
       const decodedToken = await verifyAuth(req);
       const { taskId, boardId, newStatus, newColumnIndex } = req.body;
+      logRequest("moveTask", decodedToken.uid, { boardId, taskId, newStatus });
 
       requireFields(req.body, ["taskId", "boardId", "newStatus"]);
       await checkMembership(decodedToken.uid, boardId);
@@ -251,11 +261,11 @@ const moveTask = onRequest({ region: REGION }, (req, res) => {
       await createLog(boardId, decodedToken.uid, "task_moved",
         `Task "${taskTitle}" moved to "${newStatus}" at position ${targetIndex}.`, taskId);
 
-      logger.info("Task Status Changed", { boardId, taskId, newStatus, userId: decodedToken.uid });
+      logSuccess("moveTask", t, { boardId, taskId, newStatus, userId: decodedToken.uid });
 
       return res.status(200).json({ message: "Task moved successfully." });
     } catch (error) {
-      logger.error("moveTask error", { error: error.message });
+      logError("moveTask", error, { boardId: req.body?.boardId, taskId: req.body?.taskId });
       return res.status(error.code || 500).json({ error: error.message });
     }
   });
@@ -296,7 +306,7 @@ const deleteTask = onRequest({ region: REGION }, (req, res) => {
         const bucket = admin.storage().bucket();
         await bucket.deleteFiles({ prefix: `boards/${boardId}/tasks/${taskId}/` });
       } catch (storageError) {
-        logger.warn("Storage cleanup warning", { boardId, taskId, error: storageError.message });
+        logWarn("deleteTask", "Storage cleanup failed", { boardId, taskId, error: storageError.message });
       }
 
       await createLog(boardId, decodedToken.uid, "task_deleted",
@@ -306,7 +316,7 @@ const deleteTask = onRequest({ region: REGION }, (req, res) => {
 
       return res.status(200).json({ message: "Task deleted successfully." });
     } catch (error) {
-      logger.error("deleteTask error", { error: error.message });
+      logError("deleteTask", error, { boardId: req.body?.boardId, taskId: req.body?.taskId });
       return res.status(error.code || 500).json({ error: error.message });
     }
   });

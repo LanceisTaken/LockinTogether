@@ -1,0 +1,284 @@
+{
+  "displayName": "LockinTogether — Application Monitoring",
+  "mosaicLayout": {
+    "columns": 12,
+    "tiles": [
+      {
+        "xPos": 0, "yPos": 0, "width": 6, "height": 4,
+        "widget": {
+          "title": "Function Invocations (req/min) — per function",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["resource.label.\"service_name\""]
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "60s",
+                "legendTemplate": "${resource.labels.service_name}"
+              }
+            ],
+            "yAxis": { "label": "req/min", "scale": "LINEAR" },
+            "chartOptions": { "mode": "COLOR" }
+          }
+        }
+      },
+      {
+        "xPos": 6, "yPos": 0, "width": 6, "height": 4,
+        "widget": {
+          "title": "Function Error Rate (5xx per min) — per function",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\" metric.label.\"response_code_class\"=\"5xx\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["resource.label.\"service_name\""]
+                    }
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "minAlignmentPeriod": "60s",
+                "legendTemplate": "${resource.labels.service_name}"
+              }
+            ],
+            "yAxis": { "label": "errors/min", "scale": "LINEAR" },
+            "chartOptions": { "mode": "COLOR" }
+          }
+        }
+      },
+      {
+        "xPos": 0, "yPos": 4, "width": 6, "height": 4,
+        "widget": {
+          "title": "Request Latency p95 (ms) — per function",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_latencies\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_95",
+                      "crossSeriesReducer": "REDUCE_MAX",
+                      "groupByFields": ["resource.label.\"service_name\""]
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "60s",
+                "legendTemplate": "${resource.labels.service_name}"
+              }
+            ],
+            "yAxis": { "label": "ms (p95)", "scale": "LINEAR" },
+            "chartOptions": { "mode": "COLOR" }
+          }
+        }
+      },
+      {
+        "xPos": 6, "yPos": 4, "width": 6, "height": 4,
+        "widget": {
+          "title": "Firestore — Document Reads & Writes (ops/sec)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"firestore.googleapis.com/document/read_count\" resource.type=\"firestore.googleapis.com/Database\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "60s",
+                "legendTemplate": "Reads/sec"
+              },
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"firestore.googleapis.com/document/write_count\" resource.type=\"firestore.googleapis.com/Database\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "60s",
+                "legendTemplate": "Writes/sec"
+              }
+            ],
+            "yAxis": { "label": "ops/sec", "scale": "LINEAR" },
+            "chartOptions": { "mode": "COLOR" }
+          }
+        }
+      },
+      {
+        "xPos": 0, "yPos": 8, "width": 6, "height": 4,
+        "widget": {
+          "title": "Auto-Scaling — Active Cloud Run Instances",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/container/instance_count\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MAX",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": ["resource.label.\"service_name\""]
+                    }
+                  }
+                },
+                "plotType": "STACKED_AREA",
+                "minAlignmentPeriod": "60s",
+                "legendTemplate": "${resource.labels.service_name}"
+              }
+            ],
+            "yAxis": { "label": "instances", "scale": "LINEAR" },
+            "chartOptions": { "mode": "COLOR" }
+          }
+        }
+      },
+      {
+        "xPos": 6, "yPos": 8, "width": 6, "height": 4,
+        "widget": {
+          "title": "uploadAttachment — Execution Duration p50 & p99 (ms)",
+          "xyChart": {
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_latencies\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\" resource.label.\"service_name\"=\"uploadattachment\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                      "crossSeriesReducer": "REDUCE_MAX"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "60s",
+                "legendTemplate": "p99"
+              },
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "metric.type=\"run.googleapis.com/request_latencies\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\" resource.label.\"service_name\"=\"uploadattachment\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                      "crossSeriesReducer": "REDUCE_MAX"
+                    }
+                  }
+                },
+                "plotType": "LINE",
+                "minAlignmentPeriod": "60s",
+                "legendTemplate": "p50"
+              }
+            ],
+            "yAxis": { "label": "ms", "scale": "LINEAR" },
+            "chartOptions": { "mode": "COLOR" }
+          }
+        }
+      },
+      {
+        "xPos": 0, "yPos": 12, "width": 3, "height": 3,
+        "widget": {
+          "title": "Total Requests (1h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\"",
+                "aggregation": {
+                  "alignmentPeriod": "3600s",
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
+            },
+            "sparkChartView": { "sparkChartType": "SPARK_LINE" }
+          }
+        }
+      },
+      {
+        "xPos": 3, "yPos": 12, "width": 3, "height": 3,
+        "widget": {
+          "title": "Total Errors (1h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\" metric.label.\"response_code_class\"=\"5xx\"",
+                "aggregation": {
+                  "alignmentPeriod": "3600s",
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
+            },
+            "sparkChartView": { "sparkChartType": "SPARK_BAR" },
+            "thresholds": [
+              { "value": 1, "color": "YELLOW", "direction": "ABOVE" },
+              { "value": 10, "color": "RED", "direction": "ABOVE" }
+            ]
+          }
+        }
+      },
+      {
+        "xPos": 6, "yPos": 12, "width": 3, "height": 3,
+        "widget": {
+          "title": "Firestore Reads (1h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"firestore.googleapis.com/document/read_count\" resource.type=\"firestore.googleapis.com/Database\"",
+                "aggregation": {
+                  "alignmentPeriod": "3600s",
+                  "perSeriesAligner": "ALIGN_SUM",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
+            },
+            "sparkChartView": { "sparkChartType": "SPARK_LINE" }
+          }
+        }
+      },
+      {
+        "xPos": 9, "yPos": 12, "width": 3, "height": 3,
+        "widget": {
+          "title": "Peak Instances (1h)",
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "filter": "metric.type=\"run.googleapis.com/container/instance_count\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\"",
+                "aggregation": {
+                  "alignmentPeriod": "3600s",
+                  "perSeriesAligner": "ALIGN_MAX",
+                  "crossSeriesReducer": "REDUCE_SUM"
+                }
+              }
+            },
+            "sparkChartView": { "sparkChartType": "SPARK_LINE" }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "displayName": "LockinTogether — High Function Error Rate",
+  "documentation": {
+    "content": "Triggers when Cloud Functions (Cloud Run) return more than 5 errors (5xx) per minute over a 5-minute window. Investigate via Cloud Logging: resource.type=cloud_run_revision project_id=lockintogether-9c05f severity=ERROR",
+    "mimeType": "text/markdown"
+  },
+  "conditions": [
+    {
+      "displayName": "5xx error rate > 5 per minute (5-min window)",
+      "conditionThreshold": {
+        "filter": "metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\" resource.label.\"project_id\"=\"lockintogether-9c05f\" metric.label.\"response_code_class\"=\"5xx\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "60s",
+            "perSeriesAligner": "ALIGN_RATE",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "groupByFields": ["resource.label.\"service_name\""]
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 5,
+        "duration": "300s",
+        "trigger": { "count": 1 }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "autoClose": "604800s"
+  },
+  "combiner": "OR",
+  "enabled": true,
+  "notificationChannels": []
+}
