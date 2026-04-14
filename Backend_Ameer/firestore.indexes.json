@@ -10,6 +10,15 @@
       ]
     },
     {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "boardId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "columnIndex", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "activityLog",
       "queryScope": "COLLECTION",
       "fields": [
