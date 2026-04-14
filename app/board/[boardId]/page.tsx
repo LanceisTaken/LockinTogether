@@ -122,8 +122,8 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
 
   return (
     <ProtectedRoute>
-      <main className="min-h-screen bg-white text-black">
-        <header className="bg-primary border-b border-border h-20 flex items-center justify-between px-8 shadow-lg">
+      <main className="h-[100dvh] overflow-hidden bg-white text-black flex flex-col">
+        <header className="bg-primary border-b border-border px-4 py-3 flex flex-col gap-3 md:flex-row md:h-20 md:items-center md:justify-between md:px-8">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"

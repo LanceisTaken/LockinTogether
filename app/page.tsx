@@ -109,7 +109,7 @@ export default function Home() {
                   <PlusCircle className="w-4 h-4" /> New Board
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Create New Board</DialogTitle>
                   <DialogDescription>

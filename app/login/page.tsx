@@ -33,6 +33,10 @@ export default function LoginPage() {
     }
   }, [loading, user, router])
 
+
+
+
+  
   // Called by GIS when user completes Google sign-in
   useEffect(() => {
     window.handleGoogleCredential = async ({ credential }) => {
