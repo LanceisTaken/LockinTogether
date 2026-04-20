@@ -20,14 +20,14 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog"
-import { ArrowLeft, LayoutGrid, UserPlus, History, Bell } from "lucide-react"
+import { ArrowLeft, LayoutGrid, UserPlus, History, Bell, Users, Trash2 } from "lucide-react"
 import {
   useBoardRealtime,
   useTasksRealtime,
   useBoardMembersRealtime,
   useNotificationsRealtime,
 } from "@/lib/firebase/firestore"
-import { searchUserByEmail } from "@/lib/api"
+import { searchUserByEmail, updateMemberRole, removeBoardMember } from "@/lib/api"
 import { sendNotification } from "@/lib/firebase/firestore"
 import { useAuth } from "@/lib/firebase/auth-context"
 
@@ -50,7 +50,41 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
   const [inviteError, setInviteError] = useState("")
   const [isInviting, setIsInviting] = useState(false)
 
+  const [membersOpen, setMembersOpen] = useState(false)
+  const [membersError, setMembersError] = useState("")
+  const [pendingMemberId, setPendingMemberId] = useState<string | null>(null)
+
   const [rightPanel, setRightPanel] = useState<RightPanel>("none")
+
+  // Current user's role on this board ("owner" | "admin" | "member" | undefined)
+  const currentUserRole = members.find((m) => m.userId === currentUserId)?.role
+  const isOwner = currentUserRole === "owner"
+  const canInvite = currentUserRole === "owner" || currentUserRole === "admin"
+
+  const handleChangeMemberRole = async (userId: string, role: string) => {
+    setMembersError("")
+    setPendingMemberId(userId)
+    try {
+      await updateMemberRole({ boardId, userId, role })
+    } catch (err) {
+      setMembersError(err instanceof Error ? err.message : "Failed to change role.")
+    } finally {
+      setPendingMemberId(null)
+    }
+  }
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!confirm("Remove this member from the board?")) return
+    setMembersError("")
+    setPendingMemberId(userId)
+    try {
+      await removeBoardMember(boardId, userId)
+    } catch (err) {
+      setMembersError(err instanceof Error ? err.message : "Failed to remove member.")
+    } finally {
+      setPendingMemberId(null)
+    }
+  }
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -141,9 +175,14 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            {/* Member avatars */}
-            <div className="flex -space-x-2">
-              {members.slice(0, 5).map((m) => (
+            {/* Member avatars — first 3, then +N, all clickable to open members dialog */}
+            <button
+              type="button"
+              onClick={() => setMembersOpen(true)}
+              className="flex -space-x-2 hover:opacity-90 transition-opacity"
+              title="View members"
+            >
+              {members.slice(0, 3).map((m) => (
                 <div
                   key={m.userId}
                   className="w-8 h-8 rounded-full bg-white/20 border-2 border-white flex items-center justify-center text-xs font-medium text-white"
@@ -152,14 +191,101 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
                   {(m.displayName || m.email || "U")[0].toUpperCase()}
                 </div>
               ))}
-              {members.length > 5 && (
+              {members.length > 3 && (
                 <div className="w-8 h-8 rounded-full bg-white/30 border-2 border-white flex items-center justify-center text-xs font-medium text-white">
-                  +{members.length - 5}
+                  +{members.length - 3}
                 </div>
               )}
-            </div>
+            </button>
 
-            {/* Invite member */}
+            {/* Members list dialog */}
+            <Dialog open={membersOpen} onOpenChange={setMembersOpen}>
+              <DialogContent className="max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5" /> Board Members
+                  </DialogTitle>
+                  <DialogDescription>
+                    {isOwner
+                      ? "As the owner, you can change member roles or remove members."
+                      : "Members with access to this board."}
+                  </DialogDescription>
+                </DialogHeader>
+
+                {membersError && (
+                  <p className="text-sm text-red-600">{membersError}</p>
+                )}
+
+                <div className="space-y-2">
+                  {members.map((m) => {
+                    const isMemberOwner = m.role === "owner"
+                    const isSelf = m.userId === currentUserId
+                    const disabled = pendingMemberId === m.userId
+                    return (
+                      <div
+                        key={m.userId}
+                        className="flex items-center gap-3 rounded-md border border-slate-200 p-2"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium text-primary shrink-0">
+                          {(m.displayName || m.email || "U")[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 truncate">
+                            {m.displayName || m.email}
+                            {isSelf && <span className="text-xs text-muted-foreground"> (you)</span>}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">{m.email}</p>
+                        </div>
+
+                        {isOwner && !isMemberOwner && !isSelf ? (
+                          <>
+                            <select
+                              value={m.role}
+                              onChange={(e) => handleChangeMemberRole(m.userId, e.target.value)}
+                              disabled={disabled}
+                              className="rounded-md border border-input bg-background px-2 py-1 text-xs disabled:opacity-50"
+                            >
+                              <option value="member">Member</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(m.userId)}
+                              disabled={disabled}
+                              className="text-red-600 hover:text-red-700 disabled:opacity-40"
+                              title="Remove member"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full capitalize ${
+                              isMemberOwner
+                                ? "bg-amber-100 text-amber-800"
+                                : m.role === "admin"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {m.role}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline">Close</Button>
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Invite member — only owner/admin */}
+            {canInvite && (
             <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
               <DialogTrigger asChild>
                 <Button variant="secondary" size="sm" className="gap-2">
@@ -207,6 +333,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
                 </form>
               </DialogContent>
             </Dialog>
+            )}
 
             {/* Notifications toggle */}
             <Button
