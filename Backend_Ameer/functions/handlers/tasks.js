@@ -7,6 +7,7 @@ const { createLog } = require("./activityLog");
 const { checkMembership } = require("./boards");
 const { requireFields, validateString } = require("../utils/validators");
 const { startTimer, logRequest, logSuccess, logError, logWarn } = require("../utils/monitoring");
+const { sendError } = require("../utils/httpError");
 
 const REGION = "asia-southeast1";
 
@@ -82,14 +83,14 @@ const createTask = onRequest(TASK_OPTIONS, (req, res) => {
       const taskRef = await db.collection("tasks").add(taskData);
 
       await createLog(boardId, decodedToken.uid, "task_created",
-        `Task "${title.trim()}" was created in "${status}".`, taskRef.id);
+        `Task "${title.trim()}" was created in "${taskStatus}".`, taskRef.id);
 
-      logSuccess("createTask", t, { boardId, taskId: taskRef.id, userId: decodedToken.uid, status });
+      logSuccess("createTask", t, { boardId, taskId: taskRef.id, userId: decodedToken.uid, status: taskStatus });
 
       return res.status(201).json({ message: "Task created successfully.", task: { taskId: taskRef.id, ...taskData } });
     } catch (error) {
       logError("createTask", error, { boardId: req.body?.boardId });
-      return res.status(error.code || 500).json({ error: error.message });
+      return sendError(res, error);
     }
   });
 });
@@ -113,7 +114,7 @@ const getTasksByBoard = onRequest({ region: REGION }, (req, res) => {
       return res.status(200).json({ tasks });
     } catch (error) {
       logger.error("getTasksByBoard error", { error: error.message });
-      return res.status(error.code || 500).json({ error: error.message });
+      return sendError(res, error);
     }
   });
 });
@@ -176,7 +177,7 @@ const updateTask = onRequest(TASK_OPTIONS, (req, res) => {
       return res.status(200).json({ message: "Task updated successfully." });
     } catch (error) {
       logError("updateTask", error, { boardId: req.body?.boardId, taskId: req.body?.taskId });
-      return res.status(error.code || 500).json({ error: error.message });
+      return sendError(res, error);
     }
   });
 });
@@ -266,7 +267,7 @@ const moveTask = onRequest(MOVE_OPTIONS, (req, res) => {
       return res.status(200).json({ message: "Task moved successfully." });
     } catch (error) {
       logError("moveTask", error, { boardId: req.body?.boardId, taskId: req.body?.taskId });
-      return res.status(error.code || 500).json({ error: error.message });
+      return sendError(res, error);
     }
   });
 });
@@ -317,7 +318,7 @@ const deleteTask = onRequest({ region: REGION }, (req, res) => {
       return res.status(200).json({ message: "Task deleted successfully." });
     } catch (error) {
       logError("deleteTask", error, { boardId: req.body?.boardId, taskId: req.body?.taskId });
-      return res.status(error.code || 500).json({ error: error.message });
+      return sendError(res, error);
     }
   });
 });
@@ -358,7 +359,7 @@ const assignTask = onRequest({ region: REGION }, (req, res) => {
       return res.status(200).json({ message: "Task assignment updated." });
     } catch (error) {
       logger.error("assignTask error", { error: error.message });
-      return res.status(error.code || 500).json({ error: error.message });
+      return sendError(res, error);
     }
   });
 });
@@ -496,7 +497,7 @@ const getUserStats = onRequest({ region: REGION }, (req, res) => {
       });
     } catch (error) {
       logger.error("getUserStats error", { error: error.message });
-      return res.status(error.code || 500).json({ error: error.message });
+      return sendError(res, error);
     }
   });
 });

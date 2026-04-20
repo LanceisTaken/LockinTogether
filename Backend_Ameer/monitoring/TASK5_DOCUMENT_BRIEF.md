@@ -26,20 +26,20 @@ The dashboard contains 10 panels grouped into 4 rows:
 #### Row 1 — Traffic & Errors
 | Panel | Metric | Purpose |
 |---|---|---|
-| Function Invocations (req/min) | `run.googleapis.com/request_count` | Tracks how many requests each Cloud Function receives per minute, grouped by service name |
-| Function Error Rate (5xx/min) | `run.googleapis.com/request_count` filtered by `response_code_class=5xx` | Detects function failures in real-time |
+| Cloud Run — Total Requests (per service) | `run.googleapis.com/request_count` with `ALIGN_SUM` over 5-min windows, `STACKED_BAR` | Tracks request counts per Cloud Function, grouped by service name. Uses sum aggregation (not rate) so low-traffic functions are visible |
+| Cloud Run — 5xx Errors (per service) | `run.googleapis.com/request_count` filtered by `response_code_class=5xx`, `STACKED_BAR` | Detects function failures — each bar shows error count per 5-minute window per service |
 
 #### Row 2 — Latency & Database
 | Panel | Metric | Purpose |
 |---|---|---|
-| Request Latency p95 (ms) | `run.googleapis.com/request_latencies` at 95th percentile | Shows worst-case response time per function |
-| Firestore Reads & Writes (ops/sec) | `firestore.googleapis.com/document/read_count` + `write_count` | Monitors database load driven by real-time `onSnapshot` listeners and write operations |
+| Request Latency p50/p95 (ms) | `run.googleapis.com/request_latencies` with both p50 and p95 percentiles | Shows median and worst-case response time per function — identifies slow operations like `moveTask` (Firestore transactions) and `uploadAttachment` (file processing) |
+| Firestore — Document Reads & Writes (ops/sec) | `firestore.googleapis.com/document/read_ops_count` + `write_ops_count` | Monitors database load driven by real-time `onSnapshot` listeners and write operations |
 
-#### Row 3 — Scaling & Upload Performance
+#### Row 3 — Scaling & Resource Usage
 | Panel | Metric | Purpose |
 |---|---|---|
 | Auto-Scaling Instances (stacked area) | `run.googleapis.com/container/instance_count` | Visually demonstrates Cloud Run auto-scaling — instances spin up under load and down to 0 at idle |
-| uploadAttachment p50 & p99 Duration | `run.googleapis.com/request_latencies` filtered to `uploadattachment` service | Monitors the most latency-sensitive function (file processing + Storage upload) |
+| CPU & Memory Utilisation | `run.googleapis.com/container/cpu/utilizations` + `memory/utilizations` at p95 | Monitors resource consumption per service — validates that functions like `uploadAttachment` (512MiB) have adequate memory allocation |
 
 #### Row 4 — KPI Scorecards
 | Scorecard | What it shows |
@@ -50,12 +50,12 @@ The dashboard contains 10 panels grouped into 4 rows:
 | Peak Instances (1h) | Maximum Cloud Run instances active — demonstrates elastic scaling |
 
 ### What is monitored and why (justification per metric)
-- **Invocation rate** — LockinTogether users trigger `moveTask`, `createTask`, and `updateTask` every time they interact with the Kanban board. Tracking invocations per function identifies which operations are most used.
+- **Request count (sum, not rate)** — Using `ALIGN_SUM` with 5-minute windows ensures even low-traffic functions are visible. `ALIGN_RATE` was previously used but divided counts by alignment period, making infrequent calls appear as near-zero.
 - **Error rate** — All 15 Cloud Functions use auth middleware (`verifyAuth`). A spike in 5xx errors immediately indicates authentication failures, Firestore permission issues, or code regressions.
-- **Latency p95** — `moveTask` runs a Firestore transaction reindexing multiple tasks atomically; `uploadAttachment` processes multipart file data and writes to Cloud Storage. These are the most latency-sensitive operations.
+- **Latency p50 & p95** — Dual percentiles give both typical and worst-case latency. `moveTask` runs a Firestore transaction reindexing multiple tasks atomically; `uploadAttachment` processes multipart file data and writes to Cloud Storage.
 - **Firestore read/write volume** — Each board page opens 4 concurrent real-time `onSnapshot` listeners (tasks, boardMembers, activityLog, notifications). Read volume scales directly with concurrent users, making it the primary cost and performance indicator.
 - **Active instances** — Cloud Run scales to zero at idle and up under load. The stacked area chart proves auto-scaling behaviour is working.
-- **apphostingbackend latency** — The Next.js frontend (Firebase App Hosting) is also a Cloud Run service and appears in the latency chart. This is intentional — it shows SSR page load latency alongside API function latency, giving a full picture of cloud infrastructure performance.
+- **CPU & memory utilisation** — Validates resource allocation decisions (e.g. `uploadAttachment` configured with 512MiB memory). High CPU or memory utilisation would indicate a need to increase resource limits.
 
 ### Screenshot required
 > **[SCREENSHOT 1]** GCP Console → Monitoring → Dashboards → "LockinTogether — Application Monitoring"
