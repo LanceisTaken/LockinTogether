@@ -408,7 +408,90 @@ const updateMemberRole = onRequest({ region: REGION }, (req, res) => {
   });
 });
 
+const acceptBoardInvite = onRequest({ region: REGION }, (req, res) => {
+  cors(req, res, async () => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({ error: "Method not allowed. Use POST." });
+      }
+
+      const decodedToken = await verifyAuth(req);
+      const { notificationId } = req.body;
+
+      requireFields(req.body, ["notificationId"]);
+
+      const notifRef = db.collection("notifications").doc(notificationId);
+      const notifDoc = await notifRef.get();
+
+      if (!notifDoc.exists) {
+        return res.status(404).json({ error: "Notification not found." });
+      }
+
+      const notif = notifDoc.data();
+
+      if (notif.recipientId !== decodedToken.uid) {
+        return res.status(403).json({ error: "This invite is not addressed to you." });
+      }
+
+      if (notif.type !== "board_invite") {
+        return res.status(400).json({ error: "This notification is not a board invite." });
+      }
+
+      if (notif.read) {
+        return res.status(400).json({ error: "This invite has already been handled." });
+      }
+
+      const boardId = notif.boardId;
+      const inviteRole = notif.inviteRole || "member";
+
+      if (!["member", "admin"].includes(inviteRole)) {
+        return res.status(400).json({ error: "Invalid role on invite." });
+      }
+
+      const boardDoc = await db.collection("boards").doc(boardId).get();
+      if (!boardDoc.exists) {
+        return res.status(404).json({ error: "The board no longer exists." });
+      }
+
+      const memberDocId = `${decodedToken.uid}_${boardId}`;
+      const existingMember = await db.collection("boardMembers").doc(memberDocId).get();
+
+      if (!existingMember.exists) {
+        await db.collection("boardMembers").doc(memberDocId).set({
+          memberId: memberDocId,
+          boardId,
+          userId: decodedToken.uid,
+          role: inviteRole,
+          joinedAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      await notifRef.update({ read: true });
+
+      const userDoc = await db.collection("users").doc(decodedToken.uid).get();
+      const displayName = userDoc.exists ? userDoc.data().displayName : "A user";
+
+      await createLog(boardId, decodedToken.uid, "member_added",
+        `${displayName} accepted the invite as ${inviteRole}.`);
+
+      logger.info("Board invite accepted", {
+        boardId, userId: decodedToken.uid, role: inviteRole,
+      });
+
+      return res.status(200).json({
+        message: `You joined the board as ${inviteRole}.`,
+        boardId,
+        role: inviteRole,
+      });
+    } catch (error) {
+      logger.error("acceptBoardInvite error", { error: error.message });
+      return res.status(error.code || 500).json({ error: error.message });
+    }
+  });
+});
+
 module.exports = {
   createBoard, getBoards, getBoardById, updateBoard, deleteBoard,
-  addBoardMember, removeBoardMember, updateMemberRole, checkMembership,
+  addBoardMember, removeBoardMember, updateMemberRole, acceptBoardInvite,
+  checkMembership,
 };

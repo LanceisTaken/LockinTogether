@@ -201,6 +201,16 @@ export function updateMemberRole(data: {
   })
 }
 
+export function acceptBoardInvite(notificationId: string) {
+  return apiRequest<{ message: string; boardId: string; role: string }>(
+    "acceptBoardInvite",
+    {
+      method: "POST",
+      body: JSON.stringify({ notificationId }),
+    }
+  )
+}
+
 // ── Tasks ─────────────────────────────────────────────────────
 
 export interface TaskData {

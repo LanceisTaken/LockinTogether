@@ -9,7 +9,7 @@ import {
   markNotificationRead,
   type Notification,
 } from "@/lib/firebase/firestore"
-import { moveTask, addBoardMember } from "@/lib/api"
+import { moveTask, acceptBoardInvite } from "@/lib/api"
 
 function formatTimestamp(ts: unknown): string {
   if (!ts) return ""
@@ -58,36 +58,11 @@ export function NotificationsSidebar({ userId, canEditTask }: NotificationsSideb
   const handleAcceptInvite = async (notification: Notification) => {
     setError("")
     try {
-      // The inviter calls addBoardMember on behalf — but the current user
-      // is the recipient. We need to use the API which requires the inviter
-      // to have added the member. Instead, we'll call addBoardMember using
-      // the recipient's email (looked up from their own userId).
-      // Since the recipient is accepting, we add them directly.
-      await addBoardMember({
-        boardId: notification.boardId,
-        email: "", // We pass userId-based addition below
-        role: notification.inviteRole || "member",
-      })
-      await markNotificationRead(notification.id)
-    } catch {
-      // The addBoardMember API requires email + admin permissions.
-      // Since the recipient is accepting, we write directly to Firestore.
-      try {
-        const { doc, setDoc, serverTimestamp } = await import("firebase/firestore")
-        const { db } = await import("@/lib/firebase/config")
-
-        const memberDocId = `${userId}_${notification.boardId}`
-        await setDoc(doc(db, "boardMembers", memberDocId), {
-          memberId: memberDocId,
-          boardId: notification.boardId,
-          userId: userId,
-          role: notification.inviteRole || "member",
-          joinedAt: serverTimestamp(),
-        })
-        await markNotificationRead(notification.id)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to accept invite. Please try again.")
-      }
+      // Backend Cloud Function performs the membership write under admin
+      // privileges and marks the notification read atomically.
+      await acceptBoardInvite(notification.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to accept invite. Please try again.")
     }
   }
 
