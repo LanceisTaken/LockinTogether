@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Script from "next/script"
-import { Globe, Lock, Mail, User, AlertCircle } from "lucide-react"
+import { Globe, Lock, Mail, User, AlertCircle, Check, X } from "lucide-react"
 import {
   GoogleAuthProvider,
   signInWithCredential,
@@ -30,7 +30,18 @@ export default function SignUpPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [passwordFocused, setPasswordFocused] = useState(false)
   const [error, setError] = useState("")
+
+  // Password rule checks
+  const passwordRules = [
+    { label: "At least 6 characters", test: (p: string) => p.length >= 6 },
+    { label: "One uppercase letter", test: (p: string) => /[A-Z]/.test(p) },
+    { label: "One lowercase letter", test: (p: string) => /[a-z]/.test(p) },
+    { label: "One number", test: (p: string) => /[0-9]/.test(p) },
+    { label: "One special character", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
+  ]
+  const allRulesPassed = passwordRules.every((r) => r.test(password))
   const [success, setSuccess] = useState(false)
   const googleButtonRef = useRef<HTMLDivElement>(null)
 
@@ -93,7 +104,7 @@ export default function SignUpPage() {
     if (!displayName.trim()) return setError("Please enter your name.")
     if (!email) return setError("Please enter your email address.")
     if (!password) return setError("Please enter a password.")
-    if (password.length < 6) return setError("Password must be at least 6 characters.")
+    if (!allRulesPassed) return setError("Password does not meet all requirements.")
     if (password !== confirmPassword) return setError("Passwords do not match.")
 
     setIsSigningUp(true)
@@ -178,9 +189,33 @@ export default function SignUpPage() {
                 type="password"
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setError("") }}
+                onFocus={() => setPasswordFocused(true)}
+                onBlur={() => setPasswordFocused(false)}
                 className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                placeholder="At least 6 characters"
+                placeholder="Create a strong password"
               />
+              {(passwordFocused || password.length > 0) && (
+                <div className="mt-2 space-y-1 rounded-md bg-slate-50 border border-slate-200 p-2">
+                  {passwordRules.map((rule) => {
+                    const passed = rule.test(password)
+                    return (
+                      <div
+                        key={rule.label}
+                        className={`flex items-center gap-2 text-xs transition-colors ${
+                          passed ? "text-emerald-600" : "text-slate-500"
+                        }`}
+                      >
+                        {passed ? (
+                          <Check className="w-3.5 h-3.5 shrink-0" />
+                        ) : (
+                          <X className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                        )}
+                        <span>{rule.label}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </label>
 
             <label className="block text-sm font-medium text-slate-700">
