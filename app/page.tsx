@@ -170,8 +170,8 @@ export default function Home() {
           </div>
         </header>
 
-        <div className="flex">
-        <div className={showNotifications ? "flex-1 min-w-0 p-8" : "w-full p-8"}>
+        <div className="relative">
+        <div className="w-full p-8">
           {loadingBoards ? (
             <div className="flex items-center justify-center py-20">
               <Spinner className="h-8 w-8 text-primary" />
@@ -228,7 +228,7 @@ export default function Home() {
           )}
         </div>
         {showNotifications && (
-          <div className="w-80 border-l border-border bg-slate-50 overflow-y-auto max-h-[calc(100vh-80px)]">
+          <div className="absolute top-0 right-0 w-80 h-[calc(100vh-80px)] border-l border-border bg-slate-50 overflow-y-auto shadow-lg z-20">
             <NotificationsSidebar
               userId={currentUserId}
               canEditTask={() => false}
