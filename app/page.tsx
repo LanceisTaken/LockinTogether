@@ -209,7 +209,9 @@ export default function Home() {
                     <Users className="w-3.5 h-3.5" />
                     <span className="capitalize">{board.userRole}</span>
                     <span className="mx-1">|</span>
-                    <span>{board.columns.length} columns</span>
+                    <span>
+                      {board.memberCount ?? 1} {board.memberCount === 1 ? "member" : "members"}
+                    </span>
                   </div>
                   {board.userRole === "owner" && (
                     <button

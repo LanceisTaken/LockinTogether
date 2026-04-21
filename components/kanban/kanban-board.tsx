@@ -32,9 +32,10 @@ export interface KanbanBoardProps {
   tasks: TaskData[]
   members: BoardMember[]
   currentUserId: string
+  currentUserRole?: string
 }
 
-export function KanbanBoard({ boardId, columns, tasks, members, currentUserId }: KanbanBoardProps) {
+export function KanbanBoard({ boardId, columns, tasks, members, currentUserId, currentUserRole }: KanbanBoardProps) {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null)
   const [dragSourceColumn, setDragSourceColumn] = useState<string | null>(null)
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null)
@@ -59,7 +60,11 @@ export function KanbanBoard({ boardId, columns, tasks, members, currentUserId }:
   const getMemberInfo = (userId: string | null) =>
     members.find((m) => m.userId === userId)
 
+  const isBoardManager =
+    currentUserRole === "owner" || currentUserRole === "admin"
+
   const canEditTask = (task: TaskData) =>
+    isBoardManager ||
     task.createdBy === currentUserId ||
     (task.coEditors && task.coEditors.includes(currentUserId))
 

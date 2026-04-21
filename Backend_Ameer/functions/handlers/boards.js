@@ -113,7 +113,14 @@ const getBoards = onRequest({ region: REGION }, (req, res) => {
         const membership = memberDoc.data();
         const boardDoc = await db.collection("boards").doc(membership.boardId).get();
         if (boardDoc.exists) {
-          boards.push({ boardId: boardDoc.id, ...boardDoc.data(), userRole: membership.role });
+          const countSnap = await db.collection("boardMembers")
+            .where("boardId", "==", membership.boardId).count().get();
+          boards.push({
+            boardId: boardDoc.id,
+            ...boardDoc.data(),
+            userRole: membership.role,
+            memberCount: countSnap.data().count,
+          });
         }
       }
 
@@ -490,8 +497,105 @@ const acceptBoardInvite = onRequest({ region: REGION }, (req, res) => {
   });
 });
 
+const leaveBoard = onRequest({ region: REGION }, (req, res) => {
+  cors(req, res, async () => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({ error: "Method not allowed. Use POST." });
+      }
+
+      const decodedToken = await verifyAuth(req);
+      const { boardId } = req.body;
+      requireFields(req.body, ["boardId"]);
+
+      const memberDocId = `${decodedToken.uid}_${boardId}`;
+      const memberDoc = await db.collection("boardMembers").doc(memberDocId).get();
+
+      if (!memberDoc.exists) {
+        return res.status(404).json({ error: "You are not a member of this board." });
+      }
+
+      if (memberDoc.data().role === "owner") {
+        return res.status(400).json({
+          error: "Owners cannot leave. Transfer ownership or delete the board instead.",
+        });
+      }
+
+      // Null out assignedTo on tasks where this user is the assignee
+      const assignedTasks = await db.collection("tasks")
+        .where("boardId", "==", boardId)
+        .where("assignedTo", "==", decodedToken.uid).get();
+
+      const batch = db.batch();
+      assignedTasks.docs.forEach((doc) => batch.update(doc.ref, { assignedTo: null }));
+      batch.delete(db.collection("boardMembers").doc(memberDocId));
+      await batch.commit();
+
+      const userDoc = await db.collection("users").doc(decodedToken.uid).get();
+      const displayName = userDoc.exists ? userDoc.data().displayName : "A member";
+      await createLog(boardId, decodedToken.uid, "member_left",
+        `${displayName} left the board.`);
+
+      logger.info("Member left board", { boardId, userId: decodedToken.uid });
+
+      return res.status(200).json({ message: "You left the board." });
+    } catch (error) {
+      logger.error("leaveBoard error", { error: error.message });
+      return res.status(error.code || 500).json({ error: error.message });
+    }
+  });
+});
+
+const transferOwnership = onRequest({ region: REGION }, (req, res) => {
+  cors(req, res, async () => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({ error: "Method not allowed. Use POST." });
+      }
+
+      const decodedToken = await verifyAuth(req);
+      const { boardId, newOwnerId } = req.body;
+      requireFields(req.body, ["boardId", "newOwnerId"]);
+
+      if (newOwnerId === decodedToken.uid) {
+        return res.status(400).json({ error: "You are already the owner." });
+      }
+
+      await checkMembership(decodedToken.uid, boardId, ["owner"]);
+
+      const targetMemberDocId = `${newOwnerId}_${boardId}`;
+      const targetMemberDoc = await db.collection("boardMembers").doc(targetMemberDocId).get();
+      if (!targetMemberDoc.exists) {
+        return res.status(404).json({ error: "Target user is not a member of this board." });
+      }
+
+      const currentOwnerDocId = `${decodedToken.uid}_${boardId}`;
+
+      const batch = db.batch();
+      batch.update(db.collection("boards").doc(boardId), { ownerId: newOwnerId });
+      batch.update(db.collection("boardMembers").doc(targetMemberDocId), { role: "owner" });
+      batch.update(db.collection("boardMembers").doc(currentOwnerDocId), { role: "admin" });
+      await batch.commit();
+
+      const targetUserDoc = await db.collection("users").doc(newOwnerId).get();
+      const newOwnerName = targetUserDoc.exists ? targetUserDoc.data().displayName : "a member";
+      await createLog(boardId, decodedToken.uid, "ownership_transferred",
+        `Ownership was transferred to ${newOwnerName}.`);
+
+      logger.info("Ownership transferred", {
+        boardId, from: decodedToken.uid, to: newOwnerId,
+      });
+
+      return res.status(200).json({ message: `Ownership transferred to ${newOwnerName}.` });
+    } catch (error) {
+      logger.error("transferOwnership error", { error: error.message });
+      return res.status(error.code || 500).json({ error: error.message });
+    }
+  });
+});
+
 module.exports = {
   createBoard, getBoards, getBoardById, updateBoard, deleteBoard,
   addBoardMember, removeBoardMember, updateMemberRole, acceptBoardInvite,
-  checkMembership,
+  leaveBoard, transferOwnership, checkMembership,
 };

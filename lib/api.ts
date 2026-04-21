@@ -117,6 +117,7 @@ export interface Board {
   description: string
   columns: string[]
   userRole: string
+  memberCount?: number
   createdAt: unknown
   updatedAt: unknown
 }
@@ -209,6 +210,20 @@ export function acceptBoardInvite(notificationId: string) {
       body: JSON.stringify({ notificationId }),
     }
   )
+}
+
+export function leaveBoard(boardId: string) {
+  return apiRequest<{ message: string }>("leaveBoard", {
+    method: "POST",
+    body: JSON.stringify({ boardId }),
+  })
+}
+
+export function transferOwnership(boardId: string, newOwnerId: string) {
+  return apiRequest<{ message: string }>("transferOwnership", {
+    method: "POST",
+    body: JSON.stringify({ boardId, newOwnerId }),
+  })
 }
 
 // ── Tasks ─────────────────────────────────────────────────────

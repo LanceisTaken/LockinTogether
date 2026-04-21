@@ -20,14 +20,20 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog"
-import { ArrowLeft, LayoutGrid, UserPlus, History, Bell, Users, Trash2 } from "lucide-react"
+import { ArrowLeft, LayoutGrid, UserPlus, History, Bell, Users, Trash2, LogOut, Crown } from "lucide-react"
 import {
   useBoardRealtime,
   useTasksRealtime,
   useBoardMembersRealtime,
   useNotificationsRealtime,
 } from "@/lib/firebase/firestore"
-import { searchUserByEmail, updateMemberRole, removeBoardMember } from "@/lib/api"
+import {
+  searchUserByEmail,
+  updateMemberRole,
+  removeBoardMember,
+  leaveBoard,
+  transferOwnership,
+} from "@/lib/api"
 import { sendNotification } from "@/lib/firebase/firestore"
 import { useAuth } from "@/lib/firebase/auth-context"
 
@@ -86,6 +92,32 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
     }
   }
 
+  const handleLeaveBoard = async () => {
+    if (!confirm("Leave this board? You will lose access to all its tasks.")) return
+    setMembersError("")
+    try {
+      await leaveBoard(boardId)
+      router.push("/")
+    } catch (err) {
+      setMembersError(err instanceof Error ? err.message : "Failed to leave board.")
+    }
+  }
+
+  const handleTransferOwnership = async (userId: string, displayName: string) => {
+    if (!confirm(
+      `Transfer ownership to ${displayName}? You will be demoted to admin.`
+    )) return
+    setMembersError("")
+    setPendingMemberId(userId)
+    try {
+      await transferOwnership(boardId, userId)
+    } catch (err) {
+      setMembersError(err instanceof Error ? err.message : "Failed to transfer ownership.")
+    } finally {
+      setPendingMemberId(null)
+    }
+  }
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
     setInviteError("")
@@ -139,17 +171,19 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
     setRightPanel((prev) => (prev === panel ? "none" : panel))
   }
 
-  // Check if current user can edit a task (creator or co-editor)
+  // Check if current user can edit/delete a task:
+  // board owner, board admin, task creator, or listed co-editor.
   const canEditTask = useCallback(
     (taskId: string) => {
       const task = tasks.find((t) => t.taskId === taskId)
       if (!task) return false
+      if (currentUserRole === "owner" || currentUserRole === "admin") return true
       return (
         task.createdBy === currentUserId ||
         (task.coEditors && task.coEditors.includes(currentUserId))
       )
     },
-    [tasks, currentUserId]
+    [tasks, currentUserId, currentUserRole]
   )
 
   const loading = boardLoading || tasksLoading
@@ -250,6 +284,15 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
                             </select>
                             <button
                               type="button"
+                              onClick={() => handleTransferOwnership(m.userId, m.displayName || m.email)}
+                              disabled={disabled}
+                              className="text-amber-600 hover:text-amber-700 disabled:opacity-40"
+                              title="Transfer ownership"
+                            >
+                              <Crown className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleRemoveMember(m.userId)}
                               disabled={disabled}
                               className="text-red-600 hover:text-red-700 disabled:opacity-40"
@@ -276,7 +319,17 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
                   })}
                 </div>
 
-                <DialogFooter>
+                <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+                  {currentUserRole && currentUserRole !== "owner" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                      onClick={handleLeaveBoard}
+                    >
+                      <LogOut className="w-4 h-4" /> Leave Board
+                    </Button>
+                  )}
                   <DialogClose asChild>
                     <Button type="button" variant="outline">Close</Button>
                   </DialogClose>
@@ -390,6 +443,7 @@ export default function BoardPage({ params }: { params: Promise<{ boardId: strin
                 tasks={tasks}
                 members={members}
                 currentUserId={currentUserId}
+                currentUserRole={currentUserRole}
               />
             </div>
             {rightPanel === "activity" && (

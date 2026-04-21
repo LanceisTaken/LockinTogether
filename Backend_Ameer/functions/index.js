@@ -31,6 +31,8 @@ const {
   removeBoardMember,
   updateMemberRole,
   acceptBoardInvite,
+  leaveBoard,
+  transferOwnership,
 } = require("./handlers/boards");
 exports.createBoard = createBoard;
 exports.getBoards = getBoards;
@@ -41,6 +43,8 @@ exports.addBoardMember = addBoardMember;
 exports.removeBoardMember = removeBoardMember;
 exports.updateMemberRole = updateMemberRole;
 exports.acceptBoardInvite = acceptBoardInvite;
+exports.leaveBoard = leaveBoard;
+exports.transferOwnership = transferOwnership;
 
 // ── Task Management (Phase 3) ──────────────────────────────
 const {
