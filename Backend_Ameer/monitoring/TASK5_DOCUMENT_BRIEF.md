@@ -57,11 +57,6 @@ The dashboard contains 10 panels grouped into 4 rows:
 - **Active instances** — Cloud Run scales to zero at idle and up under load. The stacked area chart proves auto-scaling behaviour is working.
 - **CPU & memory utilisation** — Validates resource allocation decisions (e.g. `uploadAttachment` configured with 512MiB memory). High CPU or memory utilisation would indicate a need to increase resource limits.
 
-### Screenshot required
-> **[SCREENSHOT 1]** GCP Console → Monitoring → Dashboards → "LockinTogether — Application Monitoring"
-> Show the full dashboard with panels populated (use the app first to generate traffic). Capture all 4 rows.
-
----
 
 ## Task 5.2 — Logging
 
@@ -181,28 +176,6 @@ All functions have `minInstances: 0` (default), meaning they scale to zero when 
 - **Cloud Storage** (for file attachments) is also fully managed and scales automatically
 - The only scaling configuration needed is on Cloud Run (App Hosting + Cloud Functions), which has been explicitly set
 
-### Screenshot required
-> **[SCREENSHOT 4]** GCP Console → Monitoring → Dashboard → "Auto-Scaling Instances" panel
-> Ideally captured while using the app so at least 1–2 instances are visible.
-> If the panel is empty (no traffic), take a screenshot of it anyway and note in the document that 0 active instances = scaled to zero = cost-efficient idle state.
 
-> **[SCREENSHOT 5]** `apphosting.yaml` file open in the IDE showing the scaling config
-> (or just paste the yaml block above in the document)
 
----
 
-## Summary Table
-
-| Requirement | Implementation | Evidence |
-|---|---|---|
-| Monitoring tools set up | Google Cloud Monitoring custom dashboard (`dashboard.json`) deployed via `gcloud` CLI | Screenshot 1 |
-| Track performance | Request latency p95 per function, invocation rate | Screenshot 1 |
-| Track availability | 5xx error rate panel with colour-coded thresholds (yellow/red) | Screenshot 1 |
-| Track usage | Total requests scorecard, Firestore read/write volume | Screenshot 1 |
-| Logging — user actions | `activityLog` Firestore collection records every board/task action | App activity sidebar |
-| Logging — error logs | `request_error` structured logs with errorCode + errorMessage | Screenshot 3 |
-| Logging — system performance | `request_success` logs with `durationMs` per function call | Screenshot 2 |
-| Logging — event-driven | `onTaskWrite` Firestore trigger logs all task state changes | Cloud Logging |
-| Scaling — auto-scaling | Cloud Run elastic scaling 0 → maxInstances based on traffic | Screenshot 4 |
-| Scaling — configuration | `apphosting.yaml` + explicit `onRequest` options on critical functions | Screenshot 5 |
-| Scaling — load handling | concurrency per instance configured; Firestore and Storage scale independently | Document justification |
