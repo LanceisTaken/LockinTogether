@@ -8,21 +8,8 @@ const { validateString } = require("../utils/validators");
 
 const REGION = "asia-southeast1";
 
-// ============================================================
-// Phase 1: User Profile Management
-//
-// UC-01 (Register/Login) flow:
-//   1. Frontend handles Firebase Auth (email/password or Google OAuth)
-//   2. onUserCreate trigger auto-provisions a Firestore user profile
-//   3. Frontend can then read/update the profile via HTTP functions
-//
-// This maps to DFD Process 1.0 (Authenticate User) and
-// ERD Entity: User (userId, email, displayName, role, createdAt)
-// ============================================================
+//User Profile Management
 
-/**
- * onUserCreate - Auth Trigger (v1 style — v2 identity triggers differ)
- */
 const onUserCreate = functions.auth.user().onCreate(async (user) => {
   const userProfile = {
     userId: user.uid,
@@ -42,9 +29,7 @@ const onUserCreate = functions.auth.user().onCreate(async (user) => {
   return null;
 });
 
-/**
- * getUserProfile - GET
- */
+
 const getUserProfile = onRequest({ region: REGION }, (req, res) => {
   cors(req, res, async () => {
     try {
@@ -78,9 +63,7 @@ const getUserProfile = onRequest({ region: REGION }, (req, res) => {
   });
 });
 
-/**
- * updateUserProfile - PATCH
- */
+
 const updateUserProfile = onRequest({ region: REGION }, (req, res) => {
   cors(req, res, async () => {
     try {
@@ -137,9 +120,7 @@ const updateUserProfile = onRequest({ region: REGION }, (req, res) => {
   });
 });
 
-/**
- * searchUserByEmail - GET
- */
+
 const searchUserByEmail = onRequest({ region: REGION }, (req, res) => {
   cors(req, res, async () => {
     try {

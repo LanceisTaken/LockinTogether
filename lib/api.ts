@@ -47,7 +47,7 @@ async function apiRequest<T>(
   return data as T
 }
 
-// ── User Profile ──────────────────────────────────────────────
+// User Profile
 
 export function getUserProfile(uid?: string) {
   const query = uid ? `?uid=${uid}` : ""
@@ -108,7 +108,7 @@ export function searchUserByEmail(email: string) {
   }>(`searchUserByEmail?email=${encodeURIComponent(email)}`, { method: "GET" })
 }
 
-// ── Boards ────────────────────────────────────────────────────
+// Boards
 
 export interface Board {
   boardId: string
@@ -226,7 +226,7 @@ export function transferOwnership(boardId: string, newOwnerId: string) {
   })
 }
 
-// ── Tasks ─────────────────────────────────────────────────────
+// Tasks
 
 export interface TaskData {
   taskId: string
@@ -313,7 +313,7 @@ export function assignTask(data: {
   })
 }
 
-// ── Attachments ───────────────────────────────────────────────
+// Attachments
 
 export interface Attachment {
   attachmentId: string
@@ -384,7 +384,7 @@ export function deleteAttachment(attachmentId: string, boardId: string) {
   })
 }
 
-// ── Activity Log ──────────────────────────────────────────────
+// Activity Log
 
 export interface ActivityLogEntry {
   logId: string

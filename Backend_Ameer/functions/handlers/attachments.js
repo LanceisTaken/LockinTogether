@@ -14,9 +14,7 @@ const REGION = "asia-southeast1";
 const UPLOAD_OPTIONS = { region: REGION, maxInstances: 3, memory: "512MiB", timeoutSeconds: 120, concurrency: 10 };
 const ATTACH_OPTIONS = { region: REGION, maxInstances: 3, concurrency: 40 };
 
-// ============================================================
-// Phase 4: File Attachment System — UC-07
-// ============================================================
+// File Attachment System
 
 const uploadAttachment = onRequest(UPLOAD_OPTIONS, (req, res) => {
   cors(req, res, async () => {

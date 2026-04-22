@@ -14,10 +14,7 @@ const REGION = "asia-southeast1";
 const TASK_OPTIONS = { region: REGION, maxInstances: 5, concurrency: 40 };
 const MOVE_OPTIONS  = { region: REGION, maxInstances: 5, concurrency: 40 };
 
-// ============================================================
-// Phase 3: Task Management (Core Feature)
-// UC-03, UC-04, UC-05, UC-06, UC-10
-// ============================================================
+//Task Managemnent
 
 const createTask = onRequest(TASK_OPTIONS, (req, res) => {
   cors(req, res, async () => {

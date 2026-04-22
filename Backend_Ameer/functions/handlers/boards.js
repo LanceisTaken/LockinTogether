@@ -8,11 +8,7 @@ const { requireFields, validateString, validateColumns } = require("../utils/val
 
 const REGION = "asia-southeast1";
 
-// ============================================================
-// Phase 2: Board Management
-// Maps to UC-02 (Create Board) and UC-09 (Manage User Access).
-// ============================================================
-
+//Board Management
 async function checkMembership(userId, boardId, allowedRoles = null) {
   const memberDocId = `${userId}_${boardId}`;
   const memberDoc = await db.collection("boardMembers").doc(memberDocId).get();

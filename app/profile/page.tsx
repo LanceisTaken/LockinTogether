@@ -21,7 +21,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// ── Animated ring chart ──────────────────────────────────────
+// Animated Ring Chart
 
 function ScoreRing({
   score,
@@ -111,7 +111,7 @@ function ProgressBar({
   )
 }
 
-// ── Stat card ────────────────────────────────────────────────
+// Stat Card
 
 function StatCard({
   icon: Icon,
@@ -162,7 +162,7 @@ function StatCard({
   )
 }
 
-// ── Format timestamp ─────────────────────────────────────────
+// Format Timestamp
 
 function formatDate(ts: string | null): string {
   if (!ts) return "No date"
@@ -174,7 +174,7 @@ function formatDate(ts: string | null): string {
   })
 }
 
-// ── Main page ────────────────────────────────────────────────
+// Main Page
 
 export default function ProfilePage() {
   const router = useRouter()

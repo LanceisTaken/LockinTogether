@@ -6,9 +6,7 @@ const { verifyAuth } = require("../middleware/auth");
 
 const REGION = "asia-southeast1";
 
-// ============================================================
-// Phase 5: Activity Logging — DFD Process 5.0
-// ============================================================
+//Activity Log
 
 async function createLog(boardId, userId, action, details, taskId = null) {
   const logData = { boardId, userId, action, details, taskId, timestamp: FieldValue.serverTimestamp() };
